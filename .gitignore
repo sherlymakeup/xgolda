@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+dist/
+.env.local
+data/*.db
+data/*.db-*
+storage/artifacts/*
+!storage/artifacts/.gitkeep
+drizzle/*.json
+*.tsbuildinfo
+.DS_Store

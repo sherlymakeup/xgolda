@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #000000;
+  color: #f4f4f5;
+  height: 100%;
+}
+
+/* Scrollbar tipis ala obsidian */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #27272a transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Denyut pip cyan Thought Engine */
+@keyframes pip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.25);
+  }
+  50% {
+    opacity: 0.45;
+    box-shadow: 0 0 4px rgba(0, 240, 255, 0.1);
+  }
+}
+.pip-live {
+  animation: pip-pulse 1.6s ease-in-out infinite;
+}
+
+/* Kemunculan pesan */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise-in {
+  animation: rise-in 0.25s ease-out;
+}
+
+/* Kode & pre */
+.prose-xgolda pre {
+  background: #0a0a0a;
+  border: 1px solid #1e1e24;
+  border-radius: 0.75rem;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.prose-xgolda code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+}
+.prose-xgolda p {
+  margin: 0.5rem 0;
+  line-height: 1.625;
+}
+.prose-xgolda ul,
+.prose-xgolda ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  line-height: 1.625;
+}
+.prose-xgolda ul {
+  list-style: disc;
+}
+.prose-xgolda ol {
+  list-style: decimal;
+}
+.prose-xgolda h1,
+.prose-xgolda h2,
+.prose-xgolda h3 {
+  font-weight: 600;
+  margin: 0.9rem 0 0.4rem;
+  letter-spacing: -0.015em;
+}
