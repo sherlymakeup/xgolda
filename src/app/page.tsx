@@ -6,7 +6,12 @@ import AgentPanel from "@/components/AgentPanel";
 import ArtifactStudio from "@/components/ArtifactStudio";
 import MessageItem from "@/components/MessageItem";
 import Omnibox from "@/components/Omnibox";
-import Sidebar from "@/components/Sidebar";
+import Sidebar, { type View } from "@/components/Sidebar";
+import Hero from "@/components/home/Hero";
+import SuggestionCards from "@/components/home/SuggestionCards";
+import TelemetryPanel from "@/components/telemetry/TelemetryPanel";
+import AgentHub from "@/components/hub/AgentHub";
+import SettingsPage from "@/components/settings/SettingsPage";
 import {
   deleteSession,
   getSession,
@@ -35,6 +40,8 @@ export default function Home() {
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioKey, setStudioKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [view, setView] = useState<View>("workspace");
+  const [mode, setMode] = useState("deepseek-r1");
   const [error, setError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -62,6 +69,7 @@ export default function Home() {
       setMessages(messages);
       setRuns([]);
       setError("");
+      setView("workspace");
       setSidebarOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -74,7 +82,13 @@ export default function Home() {
     setRuns([]);
     setStreamMsg({ reasoning: "", content: "" });
     setError("");
+    setView("workspace");
     setSidebarOpen(false);
+  };
+
+  const navigate = (v: View) => {
+    setView(v);
+    setError("");
   };
 
   const handleDelete = async (id: string) => {
@@ -85,15 +99,22 @@ export default function Home() {
 
   const handleSend = async (
     text: string,
-    opts: { agentMode: boolean; model: string }
+    opts: { agentMode: boolean; model: string; mode: string }
   ) => {
     setError("");
+    setView("workspace");
+    // Mode web/code memaksa agent mode; web dapat instruksi riset via terminal
+    const goal =
+      opts.mode === "web"
+        ? `Gunakan web (curl via terminal) bila perlu informasi terkini. ${text}`
+        : text;
     if (opts.agentMode) {
       // Mode agen otonom: tampilkan panel, polling status
       try {
-        const { runId } = await startAgentRun(text, activeId, opts.model);
+        const { runId } = await startAgentRun(goal, activeId, opts.model);
         setRuns((r) => [...r, { runId, goal: text }]);
         setStudioKey((k) => k + 1); // agen mungkin menulis artifact
+        if (opts.mode === "code") setStudioOpen(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -175,6 +196,17 @@ export default function Home() {
   };
 
   const isEmpty = messages.length === 0 && runs.length === 0 && !streaming;
+  const showHome = view === "workspace" && isEmpty;
+
+  const omnibox = (
+    <Omnibox
+      onSend={handleSend}
+      streaming={streaming}
+      defaultModel={DEFAULT_MODEL}
+      mode={mode}
+      onModeChange={setMode}
+    />
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-void">
@@ -186,6 +218,13 @@ export default function Home() {
         onDelete={handleDelete}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        view={view}
+        onNavigate={navigate}
+        studioOpen={studioOpen}
+        onToggleStudio={() => {
+          setStudioOpen(!studioOpen);
+          setStudioKey((k) => k + 1);
+        }}
       />
 
       {/* Kolom tengah */}
@@ -203,6 +242,13 @@ export default function Home() {
             XGOLDA
           </span>
           <div className="flex-1" />
+          <span className="hidden md:block font-mono text-[10px] tracking-[0.15em] text-ink-faint">
+            {view === "hub"
+              ? "AGENT HUB & MCP"
+              : view === "settings"
+                ? "SETTINGS"
+                : "AGENTIC WORKSPACE"}
+          </span>
           <button
             onClick={() => {
               setStudioOpen(!studioOpen);
@@ -220,110 +266,108 @@ export default function Home() {
           </button>
         </header>
 
-        {/* Area chat */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[48rem] px-4 md:px-6 py-8">
-            {isEmpty ? (
-              <div className="min-h-[50vh] flex flex-col items-center justify-center text-center">
-                <div className="w-14 h-14 rounded-2xl bg-ink text-void flex items-center justify-center font-bold text-2xl mb-5">
-                  X
-                </div>
-                <h1 className="text-4xl md:text-5xl font-semibold tracking-[-0.03em] mb-3">
-                  XGOLDA
-                </h1>
-                <p className="text-ink-mute text-[15px] max-w-md leading-relaxed mb-8">
-                  Workspace AI lokal — penalaran transparan, agen otonom,
-                  dan code studio. Semua berjalan di PC ini.
-                </p>
-                <div className="w-full max-w-2xl">
-                  <Omnibox
-                    onSend={handleSend}
-                    streaming={streaming}
-                    defaultModel={DEFAULT_MODEL}
-                  />
-                </div>
-                <div className="flex flex-wrap justify-center gap-2 mt-6">
-                  {[
-                    "Jelaskan cara kerja Chain-of-Thought",
-                    "Buatkan komponen React kartu profil neon",
-                    "Query: berapa sesi tersimpan di database?",
-                  ].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() =>
-                        handleSend(s, { agentMode: false, model: DEFAULT_MODEL })
-                      }
-                      className="text-xs text-ink-mute border border-line-hair rounded-full px-3.5 py-2 hover:border-line-soft hover:text-ink transition-colors"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6 pb-6">
-                {messages.map((m) => (
-                  <MessageItem key={m.id} message={m} />
-                ))}
-
-                {runs.map((r) => (
-                  <AgentPanel
-                    key={r.runId}
-                    runId={r.runId}
-                    goal={r.goal}
-                    onClose={() =>
-                      setRuns((list) => list.filter((x) => x.runId !== r.runId))
-                    }
-                  />
-                ))}
-
-                {streaming && (
-                  <MessageItem
-                    message={{
-                      id: "streaming",
-                      sessionId: "",
-                      role: "assistant",
-                      content: streamMsg.content,
-                      reasoningContent: streamMsg.reasoning,
-                      createdAt: Date.now(),
-                    }}
-                    streaming
-                    latencyMs={latencyMs}
-                  />
-                )}
-
-                {error && (
-                  <div className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3">
-                    <p className="font-mono text-xs text-red-400">{error}</p>
-                  </div>
-                )}
-                <div ref={bottomRef} />
-              </div>
-            )}
+        {/* Area konten */}
+        {view === "hub" ? (
+          <div className="flex-1 overflow-y-auto">
+            <AgentHub />
           </div>
-        </div>
-
-        {/* Omnibox bawah (saat sudah ada isi) */}
-        {!isEmpty && (
-          <div className="shrink-0 border-t border-line-hair bg-void/95 backdrop-blur">
-            <div className="mx-auto w-full max-w-[48rem] px-4 md:px-6 py-4">
-              {streaming ? (
-                <button
-                  onClick={stopStreaming}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl border border-line-soft bg-obsidian-950 py-3 text-sm text-ink-mute hover:text-ink hover:border-line-mid transition-colors"
-                >
-                  <Square size={13} className="fill-current" />
-                  Hentikan generasi
-                </button>
+        ) : view === "settings" ? (
+          <div className="flex-1 overflow-y-auto">
+            <SettingsPage />
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto">
+              {showHome ? (
+                <div className="min-h-full flex flex-col items-center justify-center px-4 md:px-6 py-10">
+                  <Hero />
+                  <div className="w-full max-w-2xl mt-8">{omnibox}</div>
+                  <div className="w-full max-w-2xl mt-8">
+                    <SuggestionCards
+                      onPick={(t) =>
+                        handleSend(t, {
+                          agentMode: false,
+                          model: DEFAULT_MODEL,
+                          mode,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
               ) : (
-                <Omnibox
-                  onSend={handleSend}
-                  streaming={streaming}
-                  defaultModel={DEFAULT_MODEL}
-                />
+                <div className="mx-auto w-full max-w-[76rem] px-4 md:px-6 py-8 flex gap-6 justify-center">
+                  <div className="w-full max-w-[48rem] min-w-0">
+                    <div className="space-y-6 pb-6">
+                      {messages.map((m) => (
+                        <MessageItem key={m.id} message={m} />
+                      ))}
+
+                      {runs.map((r) => (
+                        <AgentPanel
+                          key={r.runId}
+                          runId={r.runId}
+                          goal={r.goal}
+                          onClose={() =>
+                            setRuns((list) =>
+                              list.filter((x) => x.runId !== r.runId)
+                            )
+                          }
+                        />
+                      ))}
+
+                      {streaming && (
+                        <MessageItem
+                          message={{
+                            id: "streaming",
+                            sessionId: "",
+                            role: "assistant",
+                            content: streamMsg.content,
+                            reasoningContent: streamMsg.reasoning,
+                            createdAt: Date.now(),
+                          }}
+                          streaming
+                          latencyMs={latencyMs}
+                        />
+                      )}
+
+                      {error && (
+                        <div className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3">
+                          <p className="font-mono text-xs text-red-400">{error}</p>
+                        </div>
+                      )}
+                      <div ref={bottomRef} />
+                    </div>
+                  </div>
+
+                  {/* Panel telemetri kanan (ala design) */}
+                  <div className="hidden xl:block w-[300px] shrink-0">
+                    <div className="sticky top-0">
+                      <TelemetryPanel />
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
+
+            {/* Omnibox bawah (saat sudah ada isi) */}
+            {!showHome && (
+              <div className="shrink-0 border-t border-line-hair bg-void/95 backdrop-blur">
+                <div className="mx-auto w-full max-w-[48rem] px-4 md:px-6 py-4">
+                  {streaming ? (
+                    <button
+                      onClick={stopStreaming}
+                      className="w-full flex items-center justify-center gap-2 rounded-2xl border border-line-soft bg-obsidian-950 py-3 text-sm text-ink-mute hover:text-ink hover:border-line-mid transition-colors"
+                    >
+                      <Square size={13} className="fill-current" />
+                      Hentikan generasi
+                    </button>
+                  ) : (
+                    omnibox
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </main>
 

@@ -2,14 +2,33 @@
 
 import { ArrowUp, Bot, Paperclip } from "lucide-react";
 import { useState } from "react";
+import ModePills from "./home/ModePills";
 
 interface Props {
-  onSend: (text: string, opts: { agentMode: boolean; model: string }) => void;
+  onSend: (
+    text: string,
+    opts: { agentMode: boolean; model: string; mode: string }
+  ) => void;
   streaming: boolean;
   defaultModel: string;
+  mode: string;
+  onModeChange: (m: string) => void;
 }
 
-export default function Omnibox({ onSend, streaming, defaultModel }: Props) {
+const PLACEHOLDERS: Record<string, string> = {
+  "deepseek-r1": "Tanya apa saja…",
+  think: "Tanya dengan penalaran mendalam…",
+  web: "Cari info terkini / riset web… (agen akan pakai curl via terminal)",
+  code: "Perintah untuk agen otonom… mis. buatkan komponen React tombol neon",
+};
+
+export default function Omnibox({
+  onSend,
+  streaming,
+  defaultModel,
+  mode,
+  onModeChange,
+}: Props) {
   const [text, setText] = useState("");
   const [agentMode, setAgentMode] = useState(false);
   const [model, setModel] = useState(defaultModel);
@@ -18,8 +37,14 @@ export default function Omnibox({ onSend, streaming, defaultModel }: Props) {
   const submit = () => {
     const t = text.trim();
     if (!t || streaming) return;
-    onSend(t, { agentMode, model });
+    const forceAgent = agentMode || mode === "web" || mode === "code";
+    onSend(t, { agentMode: forceAgent, model, mode });
     setText("");
+  };
+
+  const handleModeChange = (m: string) => {
+    onModeChange(m);
+    if (m === "web" || m === "code") setAgentMode(true);
   };
 
   return (
@@ -41,14 +66,17 @@ export default function Omnibox({ onSend, streaming, defaultModel }: Props) {
             }
           }}
           placeholder={
-            agentMode
+            agentMode && mode !== "web" && mode !== "code"
               ? "Perintah untuk agen otonom… mis. buatkan komponen React tombol neon"
-              : "Tanya apa saja…"
+              : (PLACEHOLDERS[mode] ?? "Tanya apa saja…")
           }
           rows={1}
           className="w-full bg-transparent resize-none outline-none px-5 pt-4 pb-1 text-[15px] placeholder:text-ink-faint max-h-40"
           style={{ fieldSizing: "content" } as React.CSSProperties}
         />
+        <div className="px-5 pt-1 pb-2">
+          <ModePills mode={mode} onChange={handleModeChange} />
+        </div>
         <div className="flex items-center gap-2 px-3 pb-3 pt-1">
           {/* Model selector pill */}
           {editingModel ? (

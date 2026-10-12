@@ -1,7 +1,17 @@
 "use client";
 
-import { MessageSquarePlus, Trash2, X } from "lucide-react";
+import {
+  FileCode2,
+  MessageSquarePlus,
+  MessagesSquare,
+  Network,
+  Settings,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { Session } from "@/lib/client-api";
+
+export type View = "workspace" | "hub" | "settings";
 
 interface Props {
   sessions: Session[];
@@ -11,7 +21,18 @@ interface Props {
   onDelete: (id: string) => void;
   open: boolean;
   onClose: () => void;
+  view: View;
+  onNavigate: (v: View) => void;
+  studioOpen: boolean;
+  onToggleStudio: () => void;
 }
+
+const NAV: { id: View | "studio"; label: string; icon: typeof MessagesSquare }[] = [
+  { id: "workspace", label: "Agentic Workspace", icon: MessagesSquare },
+  { id: "hub", label: "Agent Hub & MCP", icon: Network },
+  { id: "studio", label: "Artifacts & Studio", icon: FileCode2 },
+  { id: "settings", label: "Settings", icon: Settings },
+];
 
 export default function Sidebar({
   sessions,
@@ -21,6 +42,10 @@ export default function Sidebar({
   onDelete,
   open,
   onClose,
+  view,
+  onNavigate,
+  studioOpen,
+  onToggleStudio,
 }: Props) {
   return (
     <>
@@ -52,7 +77,7 @@ export default function Sidebar({
           </button>
         </div>
 
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-2">
           <button
             onClick={onNew}
             className="w-full flex items-center gap-2 rounded-xl border border-line-hair bg-obsidian-950 hover:bg-obsidian-850 hover:border-line-soft px-3 py-2.5 text-sm text-ink transition-colors"
@@ -61,6 +86,36 @@ export default function Sidebar({
             Chat baru
           </button>
         </div>
+
+        {/* Navigasi utama */}
+        <nav className="px-2 pb-2 space-y-0.5">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const active =
+              item.id === "studio" ? studioOpen : view === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  if (item.id === "studio") onToggleStudio();
+                  else onNavigate(item.id as View);
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  active
+                    ? "bg-obsidian-800 text-ink"
+                    : "text-ink-mute hover:bg-obsidian-900 hover:text-ink"
+                }`}
+              >
+                <Icon
+                  size={15}
+                  className={active ? "text-signal" : "text-ink-faint"}
+                />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
 
         <div className="flex-1 overflow-y-auto px-2 pb-4">
           {sessions.length === 0 && (
