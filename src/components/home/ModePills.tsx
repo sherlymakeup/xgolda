@@ -6,6 +6,8 @@ import type { LucideIcon } from "lucide-react";
 interface ModePillsProps {
   mode: string;
   onChange: (m: string) => void;
+  /** Nama model asli dari env (via /api/config) untuk pil pertama. */
+  modelLabel?: string;
 }
 
 interface Mode {
@@ -14,18 +16,17 @@ interface Mode {
   icon: LucideIcon;
 }
 
-const MODES: Mode[] = [
-  { id: "deepseek-r1", label: "DeepSeek R1", icon: Cpu },
-  { id: "think", label: "Think", icon: Brain },
-  { id: "web", label: "Web", icon: Globe },
-  { id: "code", label: "Code", icon: Code2 },
-];
-
 /**
- * Pil mode omnibox: DeepSeek R1 (model), Think, Web, Code.
+ * Pil mode omnibox: [nama model asli] / Think / Web / Code.
  * Pil aktif memakai border cyan + glow sesuai spec "Active / Accent".
  */
-export default function ModePills({ mode, onChange }: ModePillsProps) {
+export default function ModePills({ mode, onChange, modelLabel }: ModePillsProps) {
+  const MODES: Mode[] = [
+    { id: "standard", label: modelLabel || "Model", icon: Cpu },
+    { id: "think", label: "Think", icon: Brain },
+    { id: "web", label: "Web", icon: Globe },
+    { id: "code", label: "Code", icon: Code2 },
+  ];
   return (
     <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Mode">
       {MODES.map((m) => {

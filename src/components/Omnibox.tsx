@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, Bot, Paperclip } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ModePills from "./home/ModePills";
 
 interface Props {
@@ -10,13 +10,16 @@ interface Props {
     opts: { agentMode: boolean; model: string; mode: string }
   ) => void;
   streaming: boolean;
+  /** Nama model dari server (/api/config) — nilai env asli, bukan hardcode. */
   defaultModel: string;
   mode: string;
   onModeChange: (m: string) => void;
+  /** Label untuk pil model pertama (nama model asli, boleh dipendekkan). */
+  modelLabel: string;
 }
 
 const PLACEHOLDERS: Record<string, string> = {
-  "deepseek-r1": "Tanya apa saja…",
+  standard: "Tanya apa saja…",
   think: "Tanya dengan penalaran mendalam…",
   web: "Cari info terkini / riset web… (agen akan pakai curl via terminal)",
   code: "Perintah untuk agen otonom… mis. buatkan komponen React tombol neon",
@@ -28,17 +31,28 @@ export default function Omnibox({
   defaultModel,
   mode,
   onModeChange,
+  modelLabel,
 }: Props) {
   const [text, setText] = useState("");
   const [agentMode, setAgentMode] = useState(false);
-  const [model, setModel] = useState(defaultModel);
+  const [model, setModel] = useState("");
   const [editingModel, setEditingModel] = useState(false);
+
+  // Sinkron sekali saat nama model asli tiba dari server;
+  // edit manual user setelah itu tidak ditimpa.
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (defaultModel && !syncedRef.current) {
+      setModel(defaultModel);
+      syncedRef.current = true;
+    }
+  }, [defaultModel]);
 
   const submit = () => {
     const t = text.trim();
     if (!t || streaming) return;
     const forceAgent = agentMode || mode === "web" || mode === "code";
-    onSend(t, { agentMode: forceAgent, model, mode });
+    onSend(t, { agentMode: forceAgent, model: model || defaultModel, mode });
     setText("");
   };
 
@@ -75,7 +89,7 @@ export default function Omnibox({
           style={{ fieldSizing: "content" } as React.CSSProperties}
         />
         <div className="px-5 pt-1 pb-2">
-          <ModePills mode={mode} onChange={handleModeChange} />
+          <ModePills mode={mode} onChange={handleModeChange} modelLabel={modelLabel} />
         </div>
         <div className="flex items-center gap-2 px-3 pb-3 pt-1">
           {/* Model selector pill */}
@@ -94,7 +108,7 @@ export default function Omnibox({
               title="Klik untuk ubah model"
               className="font-mono text-[11px] text-ink-mute border border-line-hair rounded-full px-3 py-1.5 hover:border-line-soft hover:text-ink transition-colors truncate max-w-52"
             >
-              {model}
+              {model || defaultModel || "…"}
             </button>
           )}
 

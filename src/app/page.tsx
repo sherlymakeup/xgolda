@@ -22,8 +22,6 @@ import {
   type Session,
 } from "@/lib/client-api";
 
-const DEFAULT_MODEL = "deepseek-ai/DeepSeek-R1";
-
 interface ActiveRun {
   runId: string;
   goal: string;
@@ -41,8 +39,21 @@ export default function Home() {
   const [studioKey, setStudioKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState<View>("workspace");
-  const [mode, setMode] = useState("deepseek-r1");
+  const [mode, setMode] = useState("standard");
+  const [defaultModel, setDefaultModel] = useState("");
+  const [endpoint, setEndpoint] = useState("");
   const [error, setError] = useState("");
+
+  // Muat konfigurasi model dari server (nilai env asli)
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => {
+        if (c?.model) setDefaultModel(c.model);
+        if (c?.endpoint) setEndpoint(c.endpoint);
+      })
+      .catch(() => {});
+  }, []);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -202,9 +213,10 @@ export default function Home() {
     <Omnibox
       onSend={handleSend}
       streaming={streaming}
-      defaultModel={DEFAULT_MODEL}
+      defaultModel={defaultModel}
       mode={mode}
       onModeChange={setMode}
+      modelLabel={defaultModel}
     />
   );
 
@@ -273,7 +285,7 @@ export default function Home() {
           </div>
         ) : view === "settings" ? (
           <div className="flex-1 overflow-y-auto">
-            <SettingsPage />
+            <SettingsPage model={defaultModel} endpoint={endpoint} />
           </div>
         ) : (
           <>
@@ -287,7 +299,7 @@ export default function Home() {
                       onPick={(t) =>
                         handleSend(t, {
                           agentMode: false,
-                          model: DEFAULT_MODEL,
+                          model: defaultModel,
                           mode,
                         })
                       }

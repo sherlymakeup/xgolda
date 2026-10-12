@@ -3,13 +3,15 @@
 import { Bot, Cpu, Info, RefreshCw, type LucideIcon } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
-/* Defaults mirrored from src/lib/env.ts.                              */
-/* The server reads .env.local at startup; these are the fallback      */
-/* values shown here for reference.                                    */
+/* Nilai ASLI selalu dari /api/config (env server), bukan hardcode.    */
+/* FALLBACKS hanya tampil sekilas sebelum config tiba.                 */
 /* ------------------------------------------------------------------ */
-const DEFAULTS = {
+const FALLBACKS = {
   inferenceEndpoint: "http://localhost:20128/v1",
-  defaultModel: "deepseek-ai/DeepSeek-R1",
+  defaultModel: "—",
+} as const;
+
+const STATIC_DEFAULTS = {
   temperature: "0.7",
   agentMaxSteps: "12",
   executionTimeoutMs: "15,000",
@@ -32,77 +34,11 @@ interface SettingSection {
   rows: SettingRow[];
 }
 
-const SECTIONS: SettingSection[] = [
-  {
-    title: "Neural Engine Gateway",
-    icon: Cpu,
-    blurb:
-      "Local 9Router inference endpoint. The gateway token is never displayed here.",
-    rows: [
-      {
-        label: "Inference Endpoint",
-        envVar: "INTERNAL_INFERENCE_ENDPOINT",
-        value: DEFAULTS.inferenceEndpoint,
-        hint: "OpenAI-compatible base URL on this PC.",
-      },
-      {
-        label: "Default Model",
-        envVar: "DEFAULT_MODEL",
-        value: DEFAULTS.defaultModel,
-      },
-      {
-        label: "Temperature",
-        envVar: "sessions.temperature",
-        value: DEFAULTS.temperature,
-        hint: "Per-session default for new chats.",
-      },
-    ],
-  },
-  {
-    title: "Agent",
-    icon: Bot,
-    blurb: "Autonomous loop limits and safety gates.",
-    rows: [
-      {
-        label: "Max Steps per Run",
-        envVar: "AGENT_MAX_STEPS",
-        value: DEFAULTS.agentMaxSteps,
-        hint: "Hard cap on plan → execute → evaluate iterations.",
-      },
-      {
-        label: "Execution Timeout",
-        envVar: "EXECUTION_TIMEOUT_MS",
-        value: `${DEFAULTS.executionTimeoutMs} ms`,
-        hint: "terminal_exec is killed automatically past this limit.",
-      },
-      {
-        label: "Approval Timeout",
-        envVar: "APPROVAL_TIMEOUT_MS",
-        value: `${DEFAULTS.approvalTimeoutMs} ms (5 min)`,
-        hint: "Dangerous commands expire unapproved past this limit.",
-      },
-    ],
-  },
-  {
-    title: "Retry & Resilience",
-    icon: RefreshCw,
-    blurb: "Gateway retry policy with exponential backoff and jitter.",
-    rows: [
-      {
-        label: "Retry Attempts",
-        envVar: "AI_RETRY_ATTEMPTS",
-        value: DEFAULTS.aiRetryAttempts,
-        hint: "Applies to 429 / 5xx / network errors only.",
-      },
-      {
-        label: "Retry Base Delay",
-        envVar: "AI_RETRY_BASE_MS",
-        value: `${DEFAULTS.aiRetryBaseMs} ms`,
-        hint: "Doubles per attempt, plus up to 250 ms jitter.",
-      },
-    ],
-  },
-];
+interface SettingsPageProps {
+  /** Nilai asli dari env server (via /api/config). */
+  model?: string;
+  endpoint?: string;
+}
 
 function SettingRowView({ row }: { row: SettingRow }) {
   return (
@@ -121,7 +57,79 @@ function SettingRowView({ row }: { row: SettingRow }) {
   );
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ model, endpoint }: SettingsPageProps) {
+  const SECTIONS: SettingSection[] = [
+    {
+      title: "Neural Engine Gateway",
+      icon: Cpu,
+      blurb:
+        "Local 9Router inference endpoint. The gateway token is never displayed here.",
+      rows: [
+        {
+          label: "Inference Endpoint",
+          envVar: "INTERNAL_INFERENCE_ENDPOINT",
+          value: endpoint || FALLBACKS.inferenceEndpoint,
+          hint: "OpenAI-compatible base URL on this PC.",
+        },
+        {
+          label: "Default Model",
+          envVar: "DEFAULT_MODEL",
+          value: model || FALLBACKS.defaultModel,
+        },
+        {
+          label: "Temperature",
+          envVar: "sessions.temperature",
+          value: STATIC_DEFAULTS.temperature,
+          hint: "Per-session default for new chats.",
+        },
+      ],
+    },
+    {
+      title: "Agent",
+      icon: Bot,
+      blurb: "Autonomous loop limits and safety gates.",
+      rows: [
+        {
+          label: "Max Steps per Run",
+          envVar: "AGENT_MAX_STEPS",
+          value: STATIC_DEFAULTS.agentMaxSteps,
+          hint: "Hard cap on plan → execute → evaluate iterations.",
+        },
+        {
+          label: "Execution Timeout",
+          envVar: "EXECUTION_TIMEOUT_MS",
+          value: `${STATIC_DEFAULTS.executionTimeoutMs} ms`,
+          hint: "terminal_exec is killed automatically past this limit.",
+        },
+        {
+          label: "Approval Timeout",
+          envVar: "APPROVAL_TIMEOUT_MS",
+          value: `${STATIC_DEFAULTS.approvalTimeoutMs} ms (5 min)`,
+          hint: "Dangerous commands expire unapproved past this limit.",
+        },
+      ],
+    },
+    {
+      title: "Retry & Resilience",
+      icon: RefreshCw,
+      blurb: "Gateway retry policy with exponential backoff and jitter.",
+      rows: [
+        {
+          label: "Retry Attempts",
+          envVar: "AI_RETRY_ATTEMPTS",
+          value: STATIC_DEFAULTS.aiRetryAttempts,
+          hint: "Applies to 429 / 5xx / network errors only.",
+        },
+        {
+          label: "Retry Base Delay",
+          envVar: "AI_RETRY_BASE_MS",
+          value: `${STATIC_DEFAULTS.aiRetryBaseMs} ms`,
+          hint: "Doubles per attempt, plus up to 250 ms jitter.",
+        },
+      ],
+    },
+  ];
+
   return (
     <div className="w-full bg-void">
       <div className="mx-auto w-full max-w-4xl px-4 md:px-6 py-6 md:py-8">
