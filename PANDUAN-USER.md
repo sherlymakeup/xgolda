@@ -108,7 +108,12 @@ Klik tombol **Agent** di Omnibox sampe nyala cyan, terus kasih perintah, misal:
 
 > "buatkan komponen React kartu profil neon, simpan sebagai profile-card.tsx"
 
-Agen bakal: nyusun rencana → eksekusi langkah per langkah pakai tools (baca/tulis file, query database, jalanin kode buat verifikasi) → lapor hasil. Tiap langkah tool-nya kelihatan di panel, bisa di-klik buat lihat output mentahnya.
+Agen bakal: ingat memori relevan → nyusun rencana → eksekusi langkah per langkah pakai tools (baca/tulis file, query database, jalanin kode buat verifikasi) → **verifikasi independen (critic pass)** → lapor hasil. Tiap langkah tool-nya kelihatan di panel, bisa di-klik buat lihat output mentahnya.
+
+**Fitur otak agen (Fase 3):**
+- **delegate_task** — agen bisa spawn subagen buat kerjaan yang bisa paralel (mis. riset 3 topik sekaligus). Subagen jalan di folder workspace sesi yang sama, depth-limited.
+- **Critic pass** — sebelum jawaban final diserahkan, model lain memverifikasi: goal tercapai? ada halusinasi? Bisa dimatikan di Update Config (`AGENT_CRITIC_ENABLED=0`).
+- **Long-term memory** — agen bisa `remember` fakta penting & `recall` saat butuh; tiap run otomatis recall memori yang relevan. Gaya bicara agen bisa diubah di Update Config (`AGENT_PERSONA`).
 
 ### Artifact Studio + Preview
 Klik tombol **Studio** di kanan atas. File yang ditulis agen tersimpan fisik di folder workspace thread-nya (`C:\Users\dirga\Documents\Workspace\<thread-id>\`) — bisa lu buka langsung dari Explorer. File yang di-generate sistem (gambar/TTS) tersimpan di `./storage/artifacts/` dan bisa di-download dari UI. Klik file → lihat kodenya → klik **Preview** buat render live. Buat komponen React, pastikan ada `export default` biar ke-render.

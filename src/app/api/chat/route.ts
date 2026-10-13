@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { messages, sessions } from "@/db/schema";
 import { streamChat } from "@/lib/ai/client";
+import { buildChatSystemPrompt } from "@/lib/ai/prompt-templates";
 import { buildChatContext } from "@/lib/agent/context";
 import { getConfig } from "@/lib/config";
 import { toGatewayError } from "@/lib/security/sanitization";
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
     createdAt: now,
   });
 
-  const history = await buildChatContext(sid);
+  const history = await buildChatContext(sid, await buildChatSystemPrompt());
   const started = Date.now();
   let reasoning = "";
   let content = "";

@@ -1,6 +1,10 @@
 export interface ToolContext {
   runId?: string;
   sessionId?: string;
+  /** Kedalaman delegasi (0 = run utama). */
+  depth?: number;
+  /** Model yang dipakai run ini (untuk subagent). */
+  model?: string;
 }
 
 export interface ToolResult {

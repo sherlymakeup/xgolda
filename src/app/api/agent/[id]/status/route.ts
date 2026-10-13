@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { agentRuns, approvals, toolExecutions } from "@/db/schema";
@@ -41,10 +41,16 @@ export async function GET(
     plan = [];
   }
 
+  // Approval dari run ini + semua subagent (delegate_task) — panel cukup poll induk
+  const childRuns = await db
+    .select({ id: agentRuns.id, goal: agentRuns.goal, status: agentRuns.status })
+    .from(agentRuns)
+    .where(eq(agentRuns.parentRunId, params.id));
+  const runIds = [params.id, ...childRuns.map((c) => c.id)];
   const approvalRows = await db
     .select()
     .from(approvals)
-    .where(eq(approvals.runId, params.id))
+    .where(inArray(approvals.runId, runIds))
     .orderBy(asc(approvals.createdAt));
 
   return Response.json({
@@ -79,6 +85,7 @@ export async function GET(
       createdAt: a.createdAt,
       decidedAt: a.decidedAt,
     })),
+    subruns: childRuns.map((c) => ({ id: c.id, goal: c.goal, status: c.status })),
   });
 }
 

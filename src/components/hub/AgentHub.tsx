@@ -3,17 +3,20 @@
 import {
   Activity,
   BookOpen,
+  Brain,
   Database,
   FilePlus2,
   FileText,
   FolderOpen,
   Globe,
+  History,
   Image,
   Mic,
   Newspaper,
   Plug,
   ShieldCheck,
   Terminal,
+  Users,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -23,7 +26,7 @@ import { useState } from "react";
 /* Data — mirrors the real agent tool registry (src/lib/tools/registry) */
 /* ------------------------------------------------------------------ */
 
-type Category = "Database" | "Filesystem" | "Execution" | "Knowledge" | "Gateway";
+type Category = "Database" | "Filesystem" | "Execution" | "Knowledge" | "Gateway" | "Orchestration" | "Memory";
 
 interface ToolCard {
   name: string; // exact tool name from the registry
@@ -113,6 +116,30 @@ const TOOLS: ToolCard[] = [
     icon: Mic,
     category: "Gateway",
   },
+  {
+    name: "delegate_task",
+    title: "Delegate Task",
+    description:
+      "Spawn a subagent for a self-contained subtask (same tools, same session workspace). Multiple delegate_task calls in one step run in parallel. Depth-limited.",
+    icon: Users,
+    category: "Orchestration",
+  },
+  {
+    name: "remember",
+    title: "Remember",
+    description:
+      "Save an important fact to long-term memory (vector embeddings). Survives across sessions — the agent auto-recalls relevant memories each run.",
+    icon: Brain,
+    category: "Memory",
+  },
+  {
+    name: "recall",
+    title: "Recall",
+    description:
+      "Semantic search over long-term memory. Use when you need past context: user preferences, prior decisions, project info.",
+    icon: History,
+    category: "Memory",
+  },
 ];
 
 const CATEGORIES: ("All" | Category)[] = [
@@ -122,6 +149,8 @@ const CATEGORIES: ("All" | Category)[] = [
   "Execution",
   "Knowledge",
   "Gateway",
+  "Orchestration",
+  "Memory",
 ];
 
 /* Mock telemetry — clearly illustrative, not live measurements. */
@@ -136,7 +165,7 @@ const STATS: {
 }[] = [
   {
     label: "Tools Online",
-    value: "10 / 10",
+    value: "13 / 13",
     sub: "100% Ready",
     subClass: "text-signal",
     barClass: "bg-signal",

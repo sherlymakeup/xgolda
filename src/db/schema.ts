@@ -32,6 +32,8 @@ export const agentRuns = sqliteTable("agent_runs", {
   sessionId: text("session_id").references(() => sessions.id, {
     onDelete: "set null",
   }),
+  /** Run induk bila ini subagent dari delegate_task (null = run utama). */
+  parentRunId: text("parent_run_id"),
   goal: text("goal").notNull(),
   status: text("status", {
     enum: ["queued", "planning", "running", "completed", "failed"],

@@ -7,6 +7,7 @@ import { getConfig, num } from "../config.ts";
 import { extractToolCalls } from "../ai/parser.ts";
 import {
   buildAgentSystemPrompt,
+  buildCriticPrompt,
   buildStepPrompt,
 } from "../ai/prompt-templates.ts";
 import { toGatewayError } from "../security/sanitization.ts";
@@ -21,6 +22,11 @@ export interface AgentRunOptions {
   goal: string;
   sessionId?: string;
   model?: string;
+  /** Kedalaman delegasi (0 = run utama). */
+  depth?: number;
+  parentRunId?: string;
+  /** Override budget langkah (untuk subagent). */
+  maxSteps?: number;
 }
 
 /**
@@ -31,7 +37,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
   const db = getDb();
   const cfg = await getConfig();
   const model = opts.model || cfg.values.DEFAULT_MODEL;
-  const maxSteps = num(cfg.values.AGENT_MAX_STEPS, 12);
+  const maxSteps = opts.maxSteps ?? num(cfg.values.AGENT_MAX_STEPS, 12);
+  const depth = opts.depth ?? 0;
   // Batas waktu keseluruhan run: 10 menit — cegah status 'running' abadi
   // bila gateway hang di luar timeout per-request.
   const RUN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -93,11 +100,24 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     } catch {
       /* fallback: prompt pakai teks generik */
     }
-    const systemPrompt = buildAgentSystemPrompt(
-      getToolManifest(),
-      getSkillCatalogText(),
-      workspaceDir
-    );
+    // Auto-recall: cari memori jangka panjang yang relevan dengan goal
+    let memoryBlock = "";
+    try {
+      const { searchSimilar } = await import("../../db/vector.ts");
+      const hits = await searchSimilar(opts.goal, 3);
+      const relevant = hits.filter((h) => h.score > 0.35);
+      if (relevant.length > 0) {
+        memoryBlock = relevant.map((h) => `- ${h.text}`).join("\n");
+      }
+    } catch {
+      /* memori gagal bukan fatal — lanjut tanpa memori */
+    }
+    const persona = (cfg.values.AGENT_PERSONA || "").trim();
+    const systemPrompt = buildAgentSystemPrompt(getToolManifest(), getSkillCatalogText(), {
+      workspaceDir,
+      persona,
+      memories: memoryBlock,
+    });
     const history: {
       toolName: string;
       argsJson: string;
@@ -140,7 +160,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         break;
       }
 
-      for (const call of calls) {
+      const execOne = async (call: { name: string; args: Record<string, unknown> }) => {
         if (!hasTool(call.name)) {
           const result = {
             ok: false,
@@ -153,7 +173,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
             resultJson: JSON.stringify(result),
             ok: false,
           });
-          continue;
+          return;
         }
         const started = Date.now();
         let result: { ok: boolean; output: string; exitCode?: number; durationMs?: number };
@@ -161,6 +181,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           const r = await TOOL_MAP[call.name](call.args, {
             runId: opts.runId,
             sessionId: opts.sessionId,
+            depth,
+            model,
           });
           result = { ...r, durationMs: r.durationMs ?? Date.now() - started };
         } catch (e) {
@@ -177,7 +199,15 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           resultJson: JSON.stringify(result),
           ok: result.ok,
         });
+      };
+
+      // delegate_task jalan PARALEL (subagen independen); tool lain sekuensial
+      const delegates = calls.filter((c) => c.name === "delegate_task");
+      const rest = calls.filter((c) => c.name !== "delegate_task");
+      for (const call of rest) {
+        await execOne(call);
       }
+      await Promise.all(delegates.map((call) => execOne(call)));
 
       // Bila model menyertakan teks final bersama toolcall terakhir, simpan kandidatnya
       if (cleaned) finalAnswer = cleaned;
@@ -186,6 +216,19 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     if (step >= maxSteps && !finalAnswer) {
       finalAnswer =
         "Langkah maksimum tercapai. Riwayat eksekusi tool tersimpan dan bisa dilihat di status run.";
+    }
+
+    // CRITIC PASS: verifikasi independen sebelum jawaban final diserahkan
+    if (finalAnswer && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
+      try {
+        const { content: corrected } = await chatOnce(
+          [{ role: "user", content: buildCriticPrompt(opts.goal, finalAnswer) }],
+          { model, temperature: 0.3 }
+        );
+        if (corrected.trim()) finalAnswer = corrected.trim();
+      } catch (e) {
+        console.error("[agent] critic gagal, pakai draf:", e instanceof Error ? e.message : e);
+      }
     }
 
     // Simpan jawaban final sebagai pesan asisten di sesi (bila ada sessionId)

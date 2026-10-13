@@ -19,6 +19,8 @@ interface RowDef {
   key: string;
   label: string;
   hint?: string;
+  /** true → textarea multiline (untuk nilai panjang seperti persona). */
+  long?: boolean;
 }
 
 interface SectionDef {
@@ -49,6 +51,9 @@ const SECTIONS: SectionDef[] = [
     blurb: "Batas loop otonom & safety gate.",
     rows: [
       { key: "AGENT_MAX_STEPS", label: "Max Steps per Run", hint: "Batas iterasi plan → execute → evaluate." },
+      { key: "AGENT_MAX_DEPTH", label: "Max Delegation Depth", hint: "Kedalaman maksimal subagent beranak (delegate_task). 0 = delegasi mati." },
+      { key: "AGENT_CRITIC_ENABLED", label: "Critic Pass", hint: "1 = verifikasi independen sebelum jawaban final. 0 = mati." },
+      { key: "AGENT_PERSONA", label: "Agent Persona", hint: "Gaya komunikasi agen (dimasukkan ke system prompt).", long: true },
       { key: "AGENT_WORKSPACE_ROOT", label: "Agent Workspace Root", hint: "Folder kerja agen per thread: <root>/<thread-id>/. Agen di-jail di dalamnya." },
       { key: "EXECUTION_TIMEOUT_MS", label: "Execution Timeout (ms)", hint: "terminal_exec dibunuh otomatis melewati batas ini." },
       { key: "APPROVAL_TIMEOUT_MS", label: "Approval Timeout (ms)", hint: "Perintah berbahaya kedaluwarsa tanpa keputusan." },
@@ -239,17 +244,32 @@ export default function ConfigPage() {
                             </p>
                           )}
                           <div className="flex flex-col sm:flex-row gap-2 mt-2.5">
-                            <input
-                              value={drafts[row.key] ?? ""}
-                              onChange={(e) =>
-                                setDrafts((d) => ({
-                                  ...d,
-                                  [row.key]: e.target.value,
-                                }))
-                              }
-                              spellCheck={false}
-                              className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors"
-                            />
+                            {row.long ? (
+                              <textarea
+                                value={drafts[row.key] ?? ""}
+                                onChange={(e) =>
+                                  setDrafts((d) => ({
+                                    ...d,
+                                    [row.key]: e.target.value,
+                                  }))
+                                }
+                                spellCheck={false}
+                                rows={4}
+                                className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors resize-y"
+                              />
+                            ) : (
+                              <input
+                                value={drafts[row.key] ?? ""}
+                                onChange={(e) =>
+                                  setDrafts((d) => ({
+                                    ...d,
+                                    [row.key]: e.target.value,
+                                  }))
+                                }
+                                spellCheck={false}
+                                className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors"
+                              />
+                            )}
                             <div className="flex gap-2 shrink-0">
                               <button
                                 onClick={() => save(row.key)}

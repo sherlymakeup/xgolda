@@ -5,13 +5,40 @@ Jawab dengan bahasa yang sama dengan bahasa pengguna (default: Bahasa Indonesia 
 Jawabanmu ringkas, langsung ke inti, dan siap pakai. Gunakan format markdown bila membantu.
 Jangan pernah menyebut nama penyedia model, API, atau infrastruktur di balik layar — kamu adalah XGOLDA.`;
 
+/** System prompt chat + blok persona dari config (adaptif). */
+export async function buildChatSystemPrompt(): Promise<string> {
+  try {
+    const { getConfig } = await import("../config.ts");
+    const cfg = await getConfig();
+    const persona = (cfg.values.AGENT_PERSONA || "").trim();
+    return persona ? `${CHAT_SYSTEM_PROMPT}\n\nGAYA KOMUNIKASI:\n${persona}` : CHAT_SYSTEM_PROMPT;
+  } catch {
+    return CHAT_SYSTEM_PROMPT;
+  }
+}
+
+export interface AgentPromptExtras {
+  workspaceDir?: string;
+  /** Blok persona/gaya komunikasi (dari config AGENT_PERSONA). */
+  persona?: string;
+  /** Memori jangka panjang yang relevan (auto-recall), format bullet list. */
+  memories?: string;
+}
+
 export function buildAgentSystemPrompt(
   toolManifest: string,
   skillCatalog: string = "",
-  workspaceDir: string = ""
+  extras: AgentPromptExtras = {}
 ): string {
+  const workspaceDir = extras.workspaceDir || "";
   const skillSection = skillCatalog
     ? `\nSKILLS TERSEDIA (panduan pola kerja — baca via read_skill SEBELUM memakai polanya):\n${skillCatalog}\n`
+    : "";
+  const personaSection = extras.persona
+    ? `\nGAYA KOMUNIKASI:\n${extras.persona}\n`
+    : "";
+  const memorySection = extras.memories
+    ? `\nMEMORI JANGKA PANJANG (relevan dengan goal — manfaatkan, jangan minta ulang info ini):\n${extras.memories}\n`
     : "";
   return `Kamu adalah XGOLDA Agent — agen otonom yang bekerja langkah demi langkah untuk mencapai GOAL pengguna.
 
@@ -34,11 +61,29 @@ ATURAN KERAS:
    user klik Setujui/Tolak. Saat memakai perintah seperti itu, JELASKAN dulu di pesanmu
    kenapa perintah itu perlu dan apa risikonya, supaya user bisa memutuskan.
    Kalau ditolak/kedaluwarsa, tawarkan alternatif yang lebih aman.
-${skillSection}
+${skillSection}${personaSection}${memorySection}
 TOOLS TERSEDIA:
 ${toolManifest}
 
 Pola kerja: pahami goal → cek skill relevan → rencanakan 2-5 langkah → eksekusi satu per satu via tool → verifikasi via terminal_exec → simpulkan.`;
+}
+
+export function buildCriticPrompt(goal: string, draft: string): string {
+  return `Kamu adalah KRITIKUS independen. Tugasmu: verifikasi draf jawaban agen sebelum diserahkan ke user.
+
+GOAL AWAL:
+${goal}
+
+DRAF JAWABAN AGEN:
+${draft}
+
+Periksa dengan ketat:
+1. Apakah goal benar-benar tercapai, atau agen mengklaim selesai padahal belum?
+2. Adakah kesalahan faktual, angka ngawur, atau halusinasi (klaim tanpa didukung hasil tool)?
+3. Adakah langkah yang terlewat atau asumsi yang tidak diuji?
+4. Apakah ada informasi sensitif yang bocor (nama penyedia model/API di balik layar, token, path rahasia)?
+
+Keluarkan JAWABAN FINAL yang sudah dikoreksi: pertahankan yang benar, perbaiki yang salah, hapus yang ngawur. Jika draf sudah bagus, keluarkan apa adanya dengan sedikit pemolesan. Jangan menjelaskan proses kritikmu — langsung jawabannya saja.`;
 }
 
 export function buildPlannerPrompt(goal: string): string {
