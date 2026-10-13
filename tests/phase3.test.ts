@@ -4,6 +4,9 @@
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 
 const MOCK_PORT = 20200;
@@ -20,6 +23,11 @@ const {
   buildAgentSystemPrompt,
 } = await import("../src/lib/ai/prompt-templates.ts");
 const { verifyFinalAnswer } = await import("../src/lib/agent/verify.ts");
+const {
+  extractFilenames,
+  isCreateGoal,
+  missingOnDisk,
+} = await import("../src/lib/agent/verify.ts");
 const { deleteEmbedding } = await import("../src/db/vector.ts");
 
 function waitForReady(child: ChildProcess): Promise<void> {
@@ -89,6 +97,34 @@ describe("Fase 3", () => {
     assert.doesNotMatch(out, /belum bisa dipastikan/);
   });
 
+  it("verifyFinalAnswer: klaim file via terminal tapi ADA di disk → dibiarkan", () => {
+    const out = verifyFinalAnswer(
+      "Perintah terminal sudah dijalankan untuk: Membuat test.md, Membaca ulang isi file.",
+      { written: [], succeeded: ["terminal_exec"], failed: [], diskFiles: ["test.md"] }
+    );
+    assert.doesNotMatch(out, /belum terverifikasi/);
+    assert.match(out, /Membuat test\.md/);
+  });
+
+  it("verifyFinalAnswer: klaim 'Membuat test.md' tapi TIDAK ada di disk → dikoreksi", () => {
+    const out = verifyFinalAnswer(
+      "Perintah terminal sudah dijalankan untuk: Membuat test.md.",
+      { written: [], succeeded: ["terminal_exec"], failed: [], diskFiles: [] }
+    );
+    assert.match(out, /belum terverifikasi/);
+  });
+
+  it("extractFilenames + isCreateGoal + missingOnDisk (disk = ground truth)", () => {
+    assert.deepEqual(extractFilenames("buat sebuah file test.md untuk tes"), ["test.md"]);
+    assert.equal(isCreateGoal("buat sebuah file test.md untuk tes"), true);
+    assert.equal(isCreateGoal("baca file test.md yang sudah ada"), false);
+    // folder sementara: file ada vs tidak ada
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "xgolda-verify-"));
+    fs.writeFileSync(path.join(tmp, "test.md"), "x");
+    assert.deepEqual(missingOnDisk(["test.md"], tmp), []);
+    assert.deepEqual(missingOnDisk(["hilang.md"], tmp), ["hilang.md"]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
   it("verifyFinalAnswer: draf jujur dibiarkan apa adanya", () => {
     const draft = "test.md sudah dibuat di folder workspace.";
     const out = verifyFinalAnswer(draft, {

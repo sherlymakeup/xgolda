@@ -3,6 +3,7 @@ import { getConfig, num } from "../config.ts";
 import { stripProviderNames } from "../security/sanitization.ts";
 import { ThinkStreamParser } from "./parser.ts";
 import { withRetry } from "./retry.ts";
+import type { NativeToolCall, OpenAITool } from "../tools/types.ts";
 
 export type ContentPart =
   | { type: "text"; text: string }
@@ -45,7 +46,8 @@ function buildBody(
   messages: ChatMessage[],
   model: string,
   temperature: number,
-  stream: boolean
+  stream: boolean,
+  tools?: OpenAITool[]
 ) {
   return {
     model,
@@ -54,6 +56,8 @@ function buildBody(
     stream,
     // Minta reasoning eksplisit bila gateway mendukung (diabaikan bila tidak)
     reasoning: { effort: "medium" },
+    // Native function calling (Opencode-style) — bila tools disediakan
+    ...(tools && tools.length > 0 ? { tools } : {}),
   };
 }
 
@@ -181,11 +185,23 @@ export async function streamChat(
 
 /**
  * Chat non-streaming — dipakai agent loop (butuh teks utuh per step).
+ * Bila `tools` disediakan, gateway mengembalikan `tool_calls` terstruktur
+ * (native function calling) — dipakai engine sebagai pengganti parse teks.
  */
 export async function chatOnce(
   messages: ChatMessage[],
-  opts: { model?: string; temperature?: number; signal?: AbortSignal } = {}
-): Promise<{ reasoning: string; content: string }> {
+  opts: {
+    model?: string;
+    temperature?: number;
+    signal?: AbortSignal;
+    tools?: OpenAITool[];
+  } = {}
+): Promise<{
+  reasoning: string;
+  content: string;
+  toolCalls: NativeToolCall[];
+  malformedToolCalls: number;
+}> {
   const cfg = await getConfig();
   const model = opts.model || cfg.values.DEFAULT_MODEL;
   const temperature = opts.temperature ?? 0.7;
@@ -199,7 +215,9 @@ export async function chatOnce(
           "Content-Type": "application/json",
           Authorization: `Bearer ${env.gatewayToken()}`,
         },
-        body: JSON.stringify(buildBody(messages, model, temperature, false)),
+        body: JSON.stringify(
+          buildBody(messages, model, temperature, false, opts.tools)
+        ),
         signal: gatewaySignal(opts.signal),
       });
       if (!res.ok) {
@@ -218,6 +236,26 @@ export async function chatOnce(
     }
   );
   const msg = json?.choices?.[0]?.message ?? {};
+  // Native tool calls (terstruktur — dijamin valid oleh protokol API)
+  const toolCalls: NativeToolCall[] = [];
+  let malformedToolCalls = 0;
+  const rawCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+  for (const tc of rawCalls) {
+    const fn = tc?.function;
+    if (!fn || typeof fn.name !== "string") {
+      malformedToolCalls++;
+      continue;
+    }
+    try {
+      const args = fn.arguments ? JSON.parse(fn.arguments) : {};
+      toolCalls.push({
+        name: fn.name,
+        args: args && typeof args === "object" ? args : {},
+      });
+    } catch {
+      malformedToolCalls++;
+    }
+  }
   const think = new ThinkStreamParser();
   const fromContent = think.push(String(msg.content ?? ""));
   const tail = think.flush();
@@ -230,7 +268,7 @@ export async function chatOnce(
   const content = stripProviderNames(
     fromContent.content + tail.content
   );
-  return { reasoning, content };
+  return { reasoning, content, toolCalls, malformedToolCalls };
 }
 
 /** Embedding tunggal untuk vector search lokal. */

@@ -50,8 +50,45 @@ function handleChatCompletions(body, res) {
     // Planner
     content =
       '[{"step":1,"title":"Tulis file","description":"Tulis hello.txt","tool":"fs_write_artifact"}]';
+  } else if (body.tools && sysAndUser.includes("tolak-tools")) {
+    // Simulasi gateway/model yang TIDAK mendukung native tools
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({ error: { message: "tools not supported by this model" } })
+    );
+    return;
+  } else if (body.tools && sysAndUser.includes("(belum ada)")) {
+    // Agent step 1 + native function calling: tool_calls terstruktur
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_e2e_1",
+                  type: "function",
+                  function: {
+                    name: "fs_write_artifact",
+                    arguments: JSON.stringify({
+                      filename: "e2e-hello.txt",
+                      content: "halo dari e2e",
+                    }),
+                  },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      })
+    );
+    return;
   } else if (sysAndUser.includes("(belum ada)")) {
-    // Agent step 1: panggil tool
+    // Agent step 1: panggil tool (protokol teks — untuk uji fallback)
     content =
       'Baik, saya tulis filenya.\n<toolcall>{"name": "fs_write_artifact", "args": {"filename": "e2e-hello.txt", "content": "halo dari e2e"}}</toolcall>';
   } else {

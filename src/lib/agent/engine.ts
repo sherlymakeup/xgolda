@@ -1,8 +1,10 @@
+import fs from "node:fs";
 import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "../../db/index.ts";
 import { agentRuns, messages, toolExecutions } from "../../db/schema.ts";
-import { chatOnce } from "../ai/client.ts";
+import { chatOnce, GatewayError } from "../ai/client.ts";
+import type { ChatMessage } from "../ai/client.ts";
 import { getConfig, num } from "../config.ts";
 import { extractToolCalls } from "../ai/parser.ts";
 import {
@@ -10,12 +12,17 @@ import {
   buildStepPrompt,
 } from "../ai/prompt-templates.ts";
 import { toGatewayError } from "../security/sanitization.ts";
-import { TOOL_MAP, getToolManifest, hasTool } from "../tools/registry.ts";
+import { TOOL_MAP, getToolManifest, hasTool, toOpenAITools } from "../tools/registry.ts";
 import { getSkillCatalogText } from "../skills/loader.ts";
 import { generatePlan } from "./planner.ts";
 import { summarizeToolHistory } from "./context.ts";
 import { getSessionWorkspace } from "./workspace.ts";
-import { verifyFinalAnswer } from "./verify.ts";
+import {
+  verifyFinalAnswer,
+  extractFilenames,
+  isCreateGoal,
+  missingOnDisk,
+} from "./verify.ts";
 import { emitRunEvent } from "./bus.ts";
 
 export interface AgentRunOptions {
@@ -179,6 +186,10 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     let step = 0;
     // Catatan sistem untuk iterasi berikutnya (mis. toolcall malformed)
     let systemNote = "";
+    // Native function calling (Opencode-style) — bila gateway/model tidak
+    // mendukung `tools` (HTTP 400), fallback permanen ke protokol teks.
+    const nativeTools = toOpenAITools();
+    let useNativeTools = true;
 
     while (step < maxSteps) {
       step++;
@@ -189,25 +200,56 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       }
       await setStatus("running", { currentStep: step });
 
-      const { content } = await chatOnce(
-        [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: buildStepPrompt(
-              opts.goal,
-              planTreeJson,
-              step,
-              summarizeToolHistory(history),
-              systemNote
-            ),
-          },
-        ],
-        { model, temperature: 0.4 }
-      );
+      const stepMessages: ChatMessage[] = [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: buildStepPrompt(
+            opts.goal,
+            planTreeJson,
+            step,
+            summarizeToolHistory(history),
+            systemNote
+          ),
+        },
+      ];
+      let stepResult;
+      try {
+        stepResult = await chatOnce(stepMessages, {
+          model,
+          temperature: 0.4,
+          tools: useNativeTools ? nativeTools : undefined,
+        });
+      } catch (e) {
+        if (
+          useNativeTools &&
+          e instanceof GatewayError &&
+          e.status === 400
+        ) {
+          // Gateway/model menolak `tools` — fallback ke protokol teks
+          useNativeTools = false;
+          console.error(
+            "[agent] gateway menolak tools native (400), fallback ke protokol teks"
+          );
+          stepResult = await chatOnce(stepMessages, {
+            model,
+            temperature: 0.4,
+          });
+        } else {
+          throw e;
+        }
+      }
+      const { content } = stepResult;
       systemNote = ""; // terkonsumsi
 
-      const { calls, cleaned, malformed } = extractToolCalls(content);
+      // Utamakan tool_calls terstruktur; teks <toolcall> hanya cadangan
+      // bila model tidak memakai function calling.
+      const { calls: textCalls, cleaned, malformed: textMalformed } =
+        extractToolCalls(content);
+      const calls =
+        stepResult.toolCalls.length > 0 ? stepResult.toolCalls : textCalls;
+      const malformed =
+        stepResult.toolCalls.length > 0 ? 0 : textMalformed;
 
       // Toolcall malformed = tool TIDAK pernah dieksekusi. JANGAN jadikan
       // jawaban final (itu yang bikin agen klaim "sudah dibuat" padahal tidak).
@@ -228,6 +270,27 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           continue;
         }
         finalAnswer = cleaned || content;
+        // VERIFIKASI DISK (ground truth): bila goal meminta pembuatan file,
+        // file itu WAJIB ada di folder workspace. Kalau tidak ada, jawaban
+        // final dibatalkan — model disuruh menulis ulang via fs_write_artifact.
+        // Ini menangkap kasus agen "verifikasi" via terminal dari folder yang
+        // salah, atau klaim sukses tanpa pernah menulis.
+        if (isCreateGoal(opts.goal) && step < maxSteps) {
+          const missing = missingOnDisk(
+            extractFilenames(opts.goal),
+            workspaceDir
+          );
+          if (missing.length > 0) {
+            systemNote =
+              `VERIFIKASI DISK GAGAL: file ${missing.join(", ")} TIDAK ADA ` +
+              `di folder workspace (${workspaceDir}). Klaim "sudah dibuat" SALAH — ` +
+              `jangan mengulang klaim itu. Tulis ulang file tersebut dengan ` +
+              `fs_write_artifact (JANGAN pakai terminal_exec untuk menulis file), ` +
+              `lalu verifikasi dengan fs_read_artifact.`;
+            finalAnswer = "";
+            continue;
+          }
+        }
         break;
       }
 
@@ -314,7 +377,21 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           /* abaikan baris rusak */
         }
       }
-      finalAnswer = verifyFinalAnswer(finalAnswer, { written, succeeded, failed });
+      finalAnswer = verifyFinalAnswer(finalAnswer, {
+        written,
+        succeeded,
+        failed,
+        diskFiles: (() => {
+          try {
+            return fs
+              .readdirSync(workspaceDir, { recursive: true })
+              .map((e) => String(e).split(/[\\/]/).pop()?.toLowerCase() ?? "")
+              .filter(Boolean);
+          } catch {
+            return [];
+          }
+        })(),
+      });
     }
 
     // RECOVERY: bila jawaban final degenerate (kosong/sampah), coba satu

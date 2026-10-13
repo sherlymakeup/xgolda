@@ -128,6 +128,48 @@ describe("E2E mock gateway", () => {
     await db.delete(agentRuns).where(eq(agentRuns.id, runId));
   });
 
+  it("runAgentLoop: gateway tolak tools native (400) -> fallback protokol teks", async () => {
+    const db = getDb();
+    const runId = nanoid();
+    const now = Date.now();
+    await db.insert(agentRuns).values({
+      id: runId,
+      goal: "tolak-tools: tulis file hello",
+      status: "queued",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await runAgentLoop({ runId, goal: "tolak-tools: tulis file hello" });
+
+    const runs = await db
+      .select()
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId));
+    assert.equal(runs[0].status, "completed");
+
+    const tools = await db
+      .select()
+      .from(toolExecutions)
+      .where(eq(toolExecutions.runId, runId));
+    assert.equal(tools.length, 1);
+    assert.equal(tools[0].toolName, "fs_write_artifact");
+
+    const filePath = path.resolve(
+      process.cwd(),
+      "storage",
+      "artifacts",
+      "e2e-hello.txt"
+    );
+    assert.ok(fs.existsSync(filePath), "file tool tidak tertulis via fallback");
+    assert.equal(fs.readFileSync(filePath, "utf8"), "halo dari e2e");
+
+    // Cleanup
+    fs.unlinkSync(filePath);
+    await db.delete(toolExecutions).where(eq(toolExecutions.runId, runId));
+    await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+  });
+
   it("vector: add -> search -> delete", async () => {
     const id = await addEmbedding("dokumen e2e tentang kucing", "e2e");
     const hits = await searchSimilar("kucing", 3);

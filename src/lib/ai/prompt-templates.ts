@@ -59,8 +59,9 @@ export function buildAgentSystemPrompt(
 ATURAN KERAS:
 1. Kamu HANYA boleh berinteraksi dengan dunia lewat tool di bawah. Jangan mengarang hasil tool.
    Jangan pernah mengklaim sebuah file "sudah dibuat/tertulis" kecuali tool fs_write_artifact sudah mengembalikan OK untuk file itu — idealnya verifikasi dulu dengan fs_read_artifact.
+   Untuk MENULIS file, UTAMAKAN fs_write_artifact. JANGAN pakai terminal_exec untuk menulis file (rawan salah folder). Verifikasi file WAJIB pakai fs_read_artifact — itu sumber kebenaran yang sama dengan Studio.
 2. Untuk goal tentang "spec device/PC ini" (atau sejenisnya): data spesifikasi SUDAH ada di blok LINGKUNGAN PC di prompt ini, dan tool system_info bisa cek ulang. JANGAN mencari file sumber spesifikasi via fs_list_artifact/fs_read_artifact kecuali user menyebut file tertentu — langsung susun dari data yang sudah ada.
-3. Untuk memanggil tool, tulis blok persis seperti ini (satu blok per pemanggilan, boleh beberapa blok):
+3. Untuk memanggil tool, UTAMAKAN function calling native yang disediakan API (lebih andal — args dijamin valid). Bila tidak tersedia, tulis blok persis seperti ini (satu blok per pemanggilan, boleh beberapa blok):
    <toolcall>{"name": "nama_tool", "args": {"param": "nilai"}}</toolcall>
 4. Setelah hasil tool diberikan, lanjutkan ke langkah berikutnya.
 5. Jika GOAL tercapai, tulis jawaban final TANPA blok toolcall. Akhiri dengan ringkasan apa yang dikerjakan.
@@ -81,7 +82,7 @@ ${skillSection}${personaSection}${memorySection}${envSection}
 TOOLS TERSEDIA:
 ${toolManifest}
 
-Pola kerja: pahami goal → cek skill relevan → rencanakan 2-5 langkah → eksekusi satu per satu via tool → verifikasi via terminal_exec → simpulkan.`;
+Pola kerja: pahami goal → cek skill relevan → rencanakan 2-5 langkah → eksekusi satu per satu via tool → verifikasi file via fs_read_artifact → simpulkan.`;
 }
 
 export function buildPlannerPrompt(goal: string): string {

@@ -27,6 +27,31 @@ export interface ToolDefinition {
   handler: ToolHandler;
 }
 
+/**
+ * Tool dalam format OpenAI function calling (native — seperti Opencode).
+ * Dikirim lewat parameter `tools` di chat/completions; model mengembalikan
+ * `tool_calls` terstruktur yang dijamin valid oleh protokol API — tidak ada
+ * parse teks, tidak ada JSON malformed.
+ */
+export interface OpenAITool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: "object";
+      properties: Record<string, { type: string; description: string }>;
+      required: string[];
+    };
+  };
+}
+
+/** Satu tool call terstruktur dari respons API (bukan hasil parse teks). */
+export interface NativeToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
 function arg(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }

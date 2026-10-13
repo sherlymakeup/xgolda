@@ -188,6 +188,25 @@ async function terminalExec(
   if (!fs.existsSync(cwd)) {
     return { ok: false, output: `ERROR: cwd tidak ada: ${cwd}` };
   }
+  // JAIL JUGA ISI COMMAND: path absolut di dalam perintah (mis. `> C:\Users\dirga\test.md`)
+  // bisa lolos dari jail cwd dan menulis ke luar folder. Tolak path absolut
+  // yang keluar dari workspace — pakai path relatif terhadap folder sesi.
+  // Lookbehind (?<![A-Za-z]) mencegah URL seperti https:// ikut tertangkap.
+  const absInCommand =
+    command.match(
+      /(?<![A-Za-z])(?:[A-Za-z]:[\\/]|\\\\[A-Za-z0-9._-]+[\\/])[^\s"'<>|&;]*/g
+    ) ?? [];
+  for (const p of absInCommand) {
+    if (!isInside(base, path.resolve(p))) {
+      return {
+        ok: false,
+        output:
+          `ERROR: ACCESS_DENIED: path absolut di dalam perintah keluar dari folder workspace sesi: ${p}\n` +
+          `Folder sesi: ${base}\n` +
+          `Pakai path RELATIF terhadap folder sesi (mis. "test.md"), bukan path absolut.`,
+      };
+    }
+  }
 
   const started = Date.now();
   const r = await runCommand(command, cwd, timeoutMs);
