@@ -1,6 +1,6 @@
 "use client";
 
-import { FileCode2, Menu, Square, Terminal } from "lucide-react";
+import { FileCode2, Menu, Terminal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import AgentPanel from "@/components/AgentPanel";
 import ArtifactStudio from "@/components/ArtifactStudio";
@@ -13,13 +13,11 @@ import AgentHub from "@/components/hub/AgentHub";
 import AgentTerminalPanel from "@/components/AgentTerminalPanel";
 import SettingsPage from "@/components/settings/SettingsPage";
 import ConfigPage from "@/components/config/ConfigPage";
-import { looksLikeTask } from "@/lib/intent";
 import {
   deleteSession,
   getSession,
   listSessions,
   startAgentRun,
-  streamChatRequest,
   type Attachment,
   type ChatMessage,
   type Session,
@@ -35,9 +33,6 @@ export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  const [streamMsg, setStreamMsg] = useState({ reasoning: "", content: "" });
-  const [latencyMs, setLatencyMs] = useState<number | undefined>();
   const [runs, setRuns] = useState<ActiveRun[]>([]);
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioKey, setStudioKey] = useState(0);
@@ -75,7 +70,6 @@ export default function Home() {
       })
       .catch(() => {});
   }, []);
-  const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const runIdsKey = runs.map((r) => r.runId).sort().join(",");
@@ -116,7 +110,7 @@ export default function Home() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, streamMsg, runs]);
+  }, [messages, runs]);
 
   /** Sinkron URL ?thread=<id> dua arah (bookmarkable, refresh tidak nyasar). */
   const syncThreadUrl = (id?: string) => {
@@ -129,7 +123,6 @@ export default function Home() {
 
   const loadSession = async (id: string) => {
     try {
-      abortRef.current?.abort(); // ganti thread = hentikan stream yang jalan
       const { messages } = await getSession(id);
       setActiveId(id);
       setMessages(messages);
@@ -144,11 +137,9 @@ export default function Home() {
   };
 
   const newChat = () => {
-    abortRef.current?.abort();
     setActiveId(undefined);
     setMessages([]);
     setRuns([]);
-    setStreamMsg({ reasoning: "", content: "" });
     setError("");
     setView("workspace");
     setSidebarOpen(false);
@@ -166,147 +157,62 @@ export default function Home() {
     refreshSessions();
   };
 
+  // SEMUA pesan lewat agen (chat biasa dihapus — Chat = Agent default).
   const handleSend = async (
     text: string,
-    opts: { agentMode: boolean; model: string; attachments?: Attachment[] }
+    opts: { model: string; attachments?: Attachment[] }
   ) => {
     setError("");
     setView("workspace");
     const attachments = opts.attachments || [];
-    // Safety net: SuggestionCards mem-bypass Omnibox, jadi deteksi juga di sini.
-    const useAgent = opts.agentMode || looksLikeTask(text);
     // Semua kemampuan default aktif (web + reasoning tersedia via tool agen).
     const goal = text || "Analisis gambar terlampir dan jelaskan isinya.";
-    if (useAgent) {
-      // Mode agen otonom: tampilkan panel, polling status
-      try {
-        // Pastikan selalu ada sesi — jawaban final butuh sessionId agar tersimpan
-        let sid = activeId;
-        if (!sid) {
-          const r = await fetch("/api/sessions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: text.slice(0, 60) || "Percakapan baru",
-            }),
-          });
-          const j = await r.json();
-          if (!r.ok) throw new Error(j.error || "Gagal membuat sesi");
-          sid = j.id;
-          setActiveId(sid);
-          refreshSessions();
-        }
-        syncThreadUrl(sid);
-        const { runId } = await startAgentRun(goal, sid, opts.model, text);
-        setRuns((r) => [...r, { runId, goal: text, createdAt: Date.now() }]);
-        // Tampilkan pesan user langsung; jawaban final dimuat ulang saat run selesai
-        setMessages((m) => [
-          ...m,
-          {
-            id: `local-u-${Date.now()}`,
-            sessionId: sid ?? "",
-            role: "user",
-            content: text,
-            reasoningContent: "",
-            attachmentsJson: JSON.stringify(attachments.map((a) => ({ id: a.id }))),
-            createdAt: Date.now(),
-          },
-        ]);
-        setStudioKey((k) => k + 1); // agen mungkin menulis artifact
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      return;
-    }
-
-    // Mode chat streaming biasa
-    const userMsg: ChatMessage = {
-      id: `local-${Date.now()}`,
-      sessionId: activeId ?? "",
-      role: "user",
-      content: text,
-      reasoningContent: "",
-      attachmentsJson: JSON.stringify(attachments.map((a) => ({ id: a.id }))),
-      createdAt: Date.now(),
-    };
-    setMessages((m) => [...m, userMsg]);
-    setStreaming(true);
-    setStreamMsg({ reasoning: "", content: "" });
-    setLatencyMs(undefined);
-
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    const t0 = Date.now();
-    let acc = { reasoning: "", content: "" };
-    let finalSessionId = activeId;
-    let assistantId = `local-a-${Date.now()}`;
-
+    // Mode agen otonom: tampilkan panel, polling status
     try {
-      await streamChatRequest(
+      // Pastikan selalu ada sesi — jawaban final butuh sessionId agar tersimpan
+      let sid = activeId;
+      if (!sid) {
+        const r = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: text.slice(0, 60) || "Percakapan baru",
+          }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "Gagal membuat sesi");
+        sid = j.id;
+        setActiveId(sid);
+        refreshSessions();
+      }
+      syncThreadUrl(sid);
+      const { runId } = await startAgentRun(goal, sid, opts.model, text);
+      setRuns((r) => [...r, { runId, goal: text, createdAt: Date.now() }]);
+      // Tampilkan pesan user langsung; jawaban final dimuat ulang saat run selesai
+      setMessages((m) => [
+        ...m,
         {
-          sessionId: activeId,
-          message: text,
-          model: opts.model,
-          attachments: attachments.map((a) => ({ id: a.id })),
+          id: `local-u-${Date.now()}`,
+          sessionId: sid ?? "",
+          role: "user",
+          content: text,
+          reasoningContent: "",
+          attachmentsJson: JSON.stringify(attachments.map((a) => ({ id: a.id }))),
+          createdAt: Date.now(),
         },
-        (e) => {
-          if (e.type === "session") {
-            finalSessionId = e.sessionId;
-            setActiveId(e.sessionId);
-            syncThreadUrl(e.sessionId);
-          } else if (e.type === "reasoning") {
-            acc.reasoning += e.delta;
-            setStreamMsg({ ...acc });
-          } else if (e.type === "content") {
-            acc.content += e.delta;
-            setStreamMsg({ ...acc });
-          } else if (e.type === "done") {
-            assistantId = e.messageId || assistantId;
-            setLatencyMs(e.latencyMs);
-          } else if (e.type === "error") {
-            throw new Error(`${e.error} (${e.code})`);
-          }
-        },
-        ctrl.signal
-      );
-      // Selesai: pindahkan stream ke daftar pesan
-      if (acc.content || acc.reasoning) {
-        setMessages((m) => [
-          ...m,
-          {
-            id: assistantId,
-            sessionId: finalSessionId ?? "",
-            role: "assistant",
-            content: acc.content,
-            reasoningContent: acc.reasoning,
-            createdAt: Date.now(),
-          },
-        ]);
-      }
-      setStreamMsg({ reasoning: "", content: "" });
-      refreshSessions();
+      ]);
+      setStudioKey((k) => k + 1); // agen mungkin menulis artifact
     } catch (e) {
-      if ((e as Error)?.name !== "AbortError") {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      setStreamMsg({ reasoning: "", content: "" });
-    } finally {
-      setStreaming(false);
-      abortRef.current = null;
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const stopStreaming = () => {
-    abortRef.current?.abort();
-  };
-
-  const isEmpty = messages.length === 0 && runs.length === 0 && !streaming;
+  const isEmpty = messages.length === 0 && runs.length === 0;
   const showHome = view === "workspace" && isEmpty;
 
   const omnibox = (
     <Omnibox
       onSend={handleSend}
-      streaming={streaming}
       defaultModel={defaultModel}
     />
   );
@@ -349,9 +255,6 @@ export default function Home() {
           <span className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] text-ink-faint">
             <span className="w-1.5 h-1.5 rounded-full bg-signal pip-live" />
             LIVE
-            {typeof latencyMs === "number" && (
-              <span className="text-ink-mute">· {latencyMs}ms</span>
-            )}
           </span>
           <button
             onClick={() => {
@@ -419,10 +322,7 @@ export default function Home() {
                   <div className="w-full max-w-2xl mt-8">
                     <SuggestionCards
                       onPick={(t) =>
-                        handleSend(t, {
-                          agentMode: false,
-                          model: defaultModel,
-                        })
+                        handleSend(t, { model: defaultModel })
                       }
                     />
                   </div>
@@ -479,21 +379,6 @@ export default function Home() {
                         );
                       })()}
 
-                      {streaming && (
-                        <MessageItem
-                          message={{
-                            id: "streaming",
-                            sessionId: "",
-                            role: "assistant",
-                            content: streamMsg.content,
-                            reasoningContent: streamMsg.reasoning,
-                            createdAt: Date.now(),
-                          }}
-                          streaming
-                          latencyMs={latencyMs}
-                        />
-                      )}
-
                       {error && (
                         <div className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3">
                           <p className="font-mono text-xs text-red-400">{error}</p>
@@ -510,17 +395,7 @@ export default function Home() {
             {!showHome && (
               <div className="shrink-0 border-t border-line-hair bg-void/95 backdrop-blur">
                 <div className="mx-auto w-full max-w-[52rem] px-4 md:px-6 py-4">
-                  {streaming ? (
-                    <button
-                      onClick={stopStreaming}
-                      className="w-full flex items-center justify-center gap-2 rounded-2xl border border-line-soft bg-obsidian-950 py-3 text-sm text-ink-mute hover:text-ink hover:border-line-mid transition-colors"
-                    >
-                      <Square size={13} className="fill-current" />
-                      Hentikan generasi
-                    </button>
-                  ) : (
-                    omnibox
-                  )}
+                  {omnibox}
                 </div>
               </div>
             )}

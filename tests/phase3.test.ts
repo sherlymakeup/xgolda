@@ -21,6 +21,7 @@ const { delegateTaskTool } = await import("../src/lib/tools/delegate.ts");
 const { rememberTool, recallTool } = await import("../src/lib/tools/memory.ts");
 const {
   buildAgentSystemPrompt,
+  buildPlannerPrompt,
 } = await import("../src/lib/ai/prompt-templates.ts");
 const { verifyFinalAnswer } = await import("../src/lib/agent/verify.ts");
 const {
@@ -141,6 +142,21 @@ describe("Fase 3", () => {
     assert.equal(honest, "Maaf bos, fs_write gagal karena path tidak valid.");
   });
 
+  it("system prompt agen + planner memuat tanggal hari ini (anti-tebak tanggal)", () => {
+    const today = new Intl.DateTimeFormat("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date());
+    const agent = buildAgentSystemPrompt("TOOLS", "SKILLS", {
+      workspaceDir: "/ws/abc",
+    });
+    assert.match(agent, /Hari ini:/);
+    assert.ok(agent.includes(today), `agent prompt harus memuat ${today}`);
+    const planner = buildPlannerPrompt("tulis file");
+    assert.ok(planner.includes(today), `planner prompt harus memuat ${today}`);
+  });
   it("system prompt memuat persona + memori", () => {
     const p = buildAgentSystemPrompt("TOOLS", "SKILLS", {
       workspaceDir: "/ws/abc",

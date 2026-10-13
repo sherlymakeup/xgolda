@@ -38,8 +38,16 @@ export function getDb(): BetterSQLite3Database<typeof schema> {
     _db = null;
     _raw = null;
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  // Daftarkan handler sinyal SEKALI per proses (via globalThis) — di Next.js
+  // dev, modul ini bisa ter-evaluasi per-route (tiap salinan punya _db
+  // sendiri) sehingga tanpa guard, tiap route yang ke-hit nambah 2 listener
+  // dan memicu MaxListenersExceededWarning di 11.
+  const g = globalThis as { __xgoldaDbSignals?: boolean };
+  if (!g.__xgoldaDbSignals) {
+    g.__xgoldaDbSignals = true;
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  }
   return _db;
 }
 

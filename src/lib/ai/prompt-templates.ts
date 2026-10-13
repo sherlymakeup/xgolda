@@ -1,5 +1,26 @@
 /** System prompt & template prompt XGOLDA. */
 
+/**
+ * Baris tanggal/waktu hari ini (waktu lokal server = PC user, localhost).
+ * WAJIB di semua system prompt — model tidak tahu tanggal hari ini kecuali
+ * diberi tahu; tanpa ini ia menebak dari training data (kasus: jawab
+ * "17 Maret 2026" padahal sudah 13 Oktober 2026).
+ */
+export function currentDateLine(): string {
+  const now = new Date();
+  const dateStr = new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(now);
+  const timeStr = new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(now);
+  return `Hari ini: ${dateStr}, pukul ${timeStr} (waktu lokal). Pakai tanggal ini untuk pertanyaan tentang tanggal/waktu — jangan menebak, jangan pakai tanggal dari training data.`;
+}
+
 export const CHAT_SYSTEM_PROMPT = `Kamu adalah XGOLDA, AI workspace assistant yang berjalan lokal di komputer pengguna.
 Jawab dengan bahasa yang sama dengan bahasa pengguna (default: Bahasa Indonesia santai tapi jelas).
 Jawabanmu ringkas, langsung ke inti, dan siap pakai. Gunakan format markdown bila membantu.
@@ -20,9 +41,9 @@ export async function buildChatSystemPrompt(): Promise<string> {
       /* profil gagal bukan fatal */
     }
     const personaBlock = persona ? `\n\nGAYA KOMUNIKASI:\n${persona}` : "";
-    return `${CHAT_SYSTEM_PROMPT}${personaBlock}${env}`;
+    return `${CHAT_SYSTEM_PROMPT}\n\n${currentDateLine()}${personaBlock}${env}`;
   } catch {
-    return CHAT_SYSTEM_PROMPT;
+    return `${CHAT_SYSTEM_PROMPT}\n\n${currentDateLine()}`;
   }
 }
 
@@ -56,6 +77,8 @@ export function buildAgentSystemPrompt(
     : "";
   return `Kamu adalah XGOLDA Agent — agen otonom yang bekerja langkah demi langkah untuk mencapai GOAL pengguna.
 
+${currentDateLine()}
+
 ATURAN KERAS:
 1. Kamu HANYA boleh berinteraksi dengan dunia lewat tool di bawah. Jangan mengarang hasil tool.
    Jangan pernah mengklaim sebuah file "sudah dibuat/tertulis" kecuali tool fs_write_artifact sudah mengembalikan OK untuk file itu — idealnya verifikasi dulu dengan fs_read_artifact.
@@ -86,7 +109,9 @@ Pola kerja: pahami goal → cek skill relevan → rencanakan 2-5 langkah → eks
 }
 
 export function buildPlannerPrompt(goal: string): string {
-  return `Buat rencana eksekusi bertahap untuk GOAL berikut. Balas HANYA dengan JSON array valid, tanpa markdown fence, tanpa penjelasan.
+  return `${currentDateLine()}
+
+Buat rencana eksekusi bertahap untuk GOAL berikut. Balas HANYA dengan JSON array valid, tanpa markdown fence, tanpa penjelasan.
 PENTING: title dan description WAJIB dalam Bahasa Indonesia.
 Untuk goal tentang spek device/PC ini: pakai tool system_info — JANGAN rencanakan pencarian file sumber spesifikasi.
 

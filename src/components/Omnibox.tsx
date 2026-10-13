@@ -2,7 +2,6 @@
 
 import { ArrowUp, ChevronDown, Loader2, Paperclip, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { looksLikeTask } from "@/lib/intent";
 import {
   listGatewayModels,
   uploadImage,
@@ -13,19 +12,16 @@ interface Props {
   onSend: (
     text: string,
     opts: {
-      agentMode: boolean;
       model: string;
       attachments?: Attachment[];
     }
   ) => void;
-  streaming: boolean;
   /** Nama model dari server (/api/config) — nilai env asli, bukan hardcode. */
   defaultModel: string;
 }
 
 export default function Omnibox({
   onSend,
-  streaming,
   defaultModel,
 }: Props) {
   const [text, setText] = useState("");
@@ -105,18 +101,14 @@ export default function Omnibox({
   const removeAttachment = (id: string) =>
     setAttachments((a) => a.filter((x) => x.id !== id));
 
-  const canSubmit = (text.trim() !== "" || attachments.length > 0) && !streaming;
+  const canSubmit = text.trim() !== "" || attachments.length > 0;
 
   const submit = () => {
     const t = text.trim();
-    if ((!t && attachments.length === 0) || streaming) return;
-    // Semua kemampuan default aktif — tidak ada toggle manual.
-    // Auto-route: perintah eksekusi langsung jadi agent task (intent router).
-    // Web (search/fetch) + reasoning selalu tersedia untuk agen & chat.
+    if ((!t && attachments.length === 0)) return;
+    // Semua pesan lewat agen (Chat = Agent default). Semua kemampuan aktif.
     // Approval gate tetap berlaku untuk perintah berbahaya.
-    const forceAgent = looksLikeTask(t);
     onSend(t, {
-      agentMode: forceAgent,
       model: model || defaultModel,
       attachments: attachments.length > 0 ? attachments : undefined,
     });

@@ -23,14 +23,6 @@ export interface ChatMessage {
   createdAt: number;
 }
 
-export type SseEvent =
-  | { type: "session"; sessionId: string }
-  | { type: "reasoning"; delta: string }
-  | { type: "content"; delta: string }
-  | { type: "tool_call"; tool: string; args: Record<string, unknown> }
-  | { type: "done"; latencyMs: number; sessionId: string; messageId: string }
-  | { type: "error"; error: string; code: string };
-
 export async function listSessions(): Promise<Session[]> {
   const r = await fetch("/api/sessions");
   const j = await r.json();
@@ -48,88 +40,6 @@ export async function getSession(id: string): Promise<{
 
 export async function deleteSession(id: string): Promise<void> {
   await fetch(`/api/sessions/${id}`, { method: "DELETE" });
-}
-
-/** Kirim chat dan stream event SSE ke callback. */
-export interface Attachment {
-  id: string;
-  mime?: string;
-}
-
-export async function uploadImage(file: File): Promise<{ id: string; mime: string; size: number }> {
-  const form = new FormData();
-  form.append("file", file);
-  const r = await fetch("/api/uploads", { method: "POST", body: form });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || "Upload gagal");
-  return j;
-}
-
-export async function listGatewayModels(
-  capability = "chat"
-): Promise<{ id: string; owned_by: string }[]> {
-  const r = await fetch(`/api/gateway/models?capability=${capability}`);
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || "Gagal ambil daftar model");
-  return j.models || [];
-}
-
-export async function getGatewayStatus(): Promise<{
-  ok: boolean;
-  latencyMs?: number;
-  endpoint?: string;
-  models: Record<string, number>;
-}> {
-  const r = await fetch("/api/gateway/status");
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || "Gateway tidak terjangkau");
-  return j;
-}
-
-export async function streamChatRequest(
-  body: {
-    sessionId?: string;
-    message: string;
-    model?: string;
-    temperature?: number;
-    attachments?: Attachment[];
-  },
-  onEvent: (e: SseEvent) => void,
-  signal?: AbortSignal
-): Promise<void> {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok || !res.body) {
-    const j = await res.json().catch(() => ({}));
-    throw new Error(j.error || `HTTP ${res.status}`);
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const parts = buf.split("\n\n");
-    buf = parts.pop() ?? "";
-    for (const part of parts) {
-      for (const line of part.split("\n")) {
-        const t = line.trim();
-        if (!t.startsWith("data:")) continue;
-        const payload = t.slice(5).trim();
-        if (payload === "[DONE]" || payload === '"[DONE]"') return;
-        try {
-          onEvent(JSON.parse(payload) as SseEvent);
-        } catch {
-          /* abaikan baris rusak */
-        }
-      }
-    }
-  }
 }
 
 export interface AgentRunStatus {
@@ -271,4 +181,42 @@ export function renderMarkdown(src: string): string {
   // Kembalikan code fence
   html = html.replace(/\u0000(\d+)\u0000/g, (_m, i) => blocks[Number(i)]);
   return html;
+}
+
+/** Lampiran gambar untuk vision (upload via /api/uploads). */
+export interface Attachment {
+  id: string;
+  mime: string;
+}
+
+export async function uploadImage(file: File): Promise<{ id: string; mime: string; size: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  const r = await fetch("/api/uploads", { method: "POST", body: form });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Upload gagal (HTTP ${r.status})`);
+  return j;
+}
+
+/** Daftar model gateway per kemampuan (untuk model picker). */
+export async function listGatewayModels(
+  capability: string
+): Promise<{ id: string; owned_by: string }[]> {
+  const r = await fetch(`/api/gateway/models?capability=${encodeURIComponent(capability)}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return (j.models ?? []) as { id: string; owned_by: string }[];
+}
+
+/** Status kesehatan gateway (untuk halaman Settings). */
+export async function getGatewayStatus(): Promise<{
+  ok: boolean;
+  latencyMs?: number;
+  endpoint?: string;
+  models: Record<string, number>;
+}> {
+  const r = await fetch("/api/gateway/status");
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Gateway tidak terjangkau");
+  return j;
 }
