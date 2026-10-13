@@ -124,6 +124,20 @@ const server = http.createServer((req, res) => {
       // Sukses: kembalikan byte MP3 palsu.
       res.writeHead(200, { "Content-Type": "audio/mpeg" });
       res.end(Buffer.from("ID3-mock-mp3-bytes"));
+    } else if (req.method === "POST" && url.endsWith("/images/generations")) {
+      const bodyObj = JSON.parse(body || "{}");
+      // Prompt berisi "GAGAL" → simulasi gateway error (untuk uji retry guard).
+      if (String(bodyObj.prompt || "").includes("GAGAL")) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "mock image failure" } }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          data: [{ b64_json: Buffer.from("fake-png-bytes").toString("base64") }],
+        })
+      );
     } else if (req.method === "GET" && url.endsWith("/models")) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ data: [{ id: "mock-r1" }] }));

@@ -165,6 +165,10 @@ ATURAN KERAS:
    file yang sudah ada dan tulis jawaban final. Bila naskah lebih dari 4000
    karakter, tool menolak — jangan pecah sendiri; minta user kirim naskah
    dalam pesan terpisah (satu pesan = satu generate).
+13. GENERATE SEKALI (generate_image): sama seperti TTS — maksimal 1x generate
+   berhasil per goal + 1x retry bila gagal (sistem menolak panggilan
+   berikutnya). Bila sudah berhasil, JANGAN generate lagi — pakai gambar
+   yang sudah ada dan tulis jawaban final.
 ${skillSection}${personaSection}${styleSection}${memorySection}${envSection}
 TOOLS TERSEDIA:
 ${toolManifest}

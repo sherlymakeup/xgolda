@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { gatewayModel, gatewayPost, saveBinaryArtifact } from "./gateway.ts";
 import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg } from "./types.ts";
+import { claimGenerateSlot, markGenerateDone } from "./generate-guard.ts";
 
 async function generateImage(
   args: Record<string, unknown>,
@@ -13,6 +14,9 @@ async function generateImage(
   if (!/^\d+x\d+$/.test(size)) {
     return { ok: false, output: "ERROR: 'size' harus format LEBARxTINGGI, mis. 1024x1024" };
   }
+  // Guard bersama (1x sukses maks / 2x percobaan bila gagal) — lihat generate-guard.ts.
+  const blocked = claimGenerateSlot("generate_image", ctx);
+  if (blocked) return { ok: false, output: blocked };
 
   const model = await gatewayModel("IMAGE_MODEL");
   const r = await gatewayPost({
@@ -38,6 +42,7 @@ async function generateImage(
 
   const filename = `img-${nanoid(8)}.png`;
   await saveBinaryArtifact(filename, buf, "png", ctx.sessionId);
+  markGenerateDone("generate_image", ctx, filename);
   return {
     ok: true,
     output: `Gambar tersimpan: ${filename} (${buf.length} bytes)${ctx.sessionId ? " — salinan ada di folder workspace thread" : ""}. Buka di Artifacts & Studio untuk pratinjau.`,
@@ -47,7 +52,7 @@ async function generateImage(
 export const imageGenTool: ToolDefinition = {
   name: "generate_image",
   description:
-    "Gunakan ketika user meminta dibuatkan gambar, ilustrasi, atau foto (mis. 'buatkan gambar kucing astronot', 'generate image of...'). Menghasilkan gambar PNG via gateway dan menyimpannya sebagai artifact yang bisa dipratinjau di Studio. Jangan dipakai untuk mengedit/membaca gambar yang sudah ada.",
+    "Gunakan ketika user meminta dibuatkan gambar, ilustrasi, atau foto (mis. 'buatkan gambar kucing astronot', 'generate image of...'). Menghasilkan gambar PNG via gateway dan menyimpannya sebagai artifact yang bisa dipratinjau di Studio. Jangan dipakai untuk mengedit/membaca gambar yang sudah ada. MAKSIMAL 1x generate per goal + 1x retry bila gagal (sistem menolak panggilan berikutnya). Bila tool mengembalikan error 'SUDAH berhasil', JANGAN panggil lagi — pakai gambar tersebut dan tulis jawaban final.",
   parameters: {
     prompt: { type: "string", description: "Deskripsi gambar (boleh Inggris agar hasil lebih baik)", required: true },
     size: { type: "string", description: "Ukuran LEBARxTINGGI, mis. 1024x1024 (default)" },

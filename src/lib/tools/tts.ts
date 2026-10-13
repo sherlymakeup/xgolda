@@ -2,39 +2,9 @@ import { nanoid } from "nanoid";
 import { gatewayModel, gatewayPost, saveBinaryArtifact } from "./gateway.ts";
 import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg } from "./types.ts";
+import { claimGenerateSlot, markGenerateDone } from "./generate-guard.ts";
 
 const MAX_TEXT = 4000;
-
-/**
- * Guard anti-generate-berulang (deterministik, BUKAN sekadar prompt):
- * per run, text_to_speech boleh SUKSES maks 1x. Bila panggilan pertama
- * GAGAL, diberi 1x retry (total maks 2 percobaan). Panggilan berikutnya
- * ditolak dengan pesan yang mengarahkan agen berhenti & tulis jawaban final.
- * Tanpa ini, model bisa mengulang generate berkali-kali (10+ file mp3,
- * token kebakar) karena mengira tiap langkah perlu generate lagi.
- */
-interface TtsRunState {
-  attempts: number;
-  succeeded: boolean;
-  filename: string;
-  at: number;
-}
-const ttsRuns = new Map<string, TtsRunState>();
-
-function ttsState(ctx: ToolContext): TtsRunState {
-  const key = ctx.runId ?? ctx.sessionId ?? "global";
-  // Sapu state run lama (>1 jam) supaya Map tidak bocor memori.
-  const cutoff = Date.now() - 3600_000;
-  ttsRuns.forEach((v, k) => {
-    if (v.at < cutoff) ttsRuns.delete(k);
-  });
-  let s = ttsRuns.get(key);
-  if (!s) {
-    s = { attempts: 0, succeeded: false, filename: "", at: Date.now() };
-    ttsRuns.set(key, s);
-  }
-  return s;
-}
 
 async function textToSpeech(
   args: Record<string, unknown>,
@@ -45,22 +15,9 @@ async function textToSpeech(
   if (text.length > MAX_TEXT) {
     return { ok: false, output: `ERROR: 'text' maksimal ${MAX_TEXT} karakter (dapat ${text.length})` };
   }
-  // Guard: 1x sukses maks, atau 2x percobaan bila gagal (1 generate + 1 retry).
-  const st = ttsState(ctx);
-  if (st.succeeded) {
-    return {
-      ok: false,
-      output: `ERROR: text_to_speech untuk run ini SUDAH berhasil (file: ${st.filename}). JANGAN panggil text_to_speech lagi — pakai file tersebut dan tulis jawaban final.`,
-    };
-  }
-  if (st.attempts >= 2) {
-    return {
-      ok: false,
-      output:
-        "ERROR: text_to_speech sudah 2x percobaan (1 generate + 1 retry) dan gagal. JANGAN panggil lagi — laporkan kegagalan ke user di jawaban final.",
-    };
-  }
-  st.attempts++;
+  // Guard bersama (1x sukses maks / 2x percobaan bila gagal) — lihat generate-guard.ts.
+  const blocked = claimGenerateSlot("text_to_speech", ctx);
+  if (blocked) return { ok: false, output: blocked };
   // Model & voice terpisah: `voice` adalah ID voice (mis. ElevenLabs),
   // BUKAN model. Keduanya bisa di-override per panggilan via args,
   // atau default dari config (TTS_MODEL / TTS_VOICE, bisa diubah di
@@ -91,8 +48,7 @@ async function textToSpeech(
 
   const filename = `tts-${nanoid(8)}.mp3`;
   await saveBinaryArtifact(filename, audio, "mp3", ctx.sessionId);
-  st.succeeded = true;
-  st.filename = filename;
+  markGenerateDone("text_to_speech", ctx, filename);
   return {
     ok: true,
     output: `Audio tersimpan: ${filename} (${audio.length} bytes)${ctx.sessionId ? " — salinan ada di folder workspace thread" : ""}. Buka di Artifacts & Studio untuk memutar.`,
