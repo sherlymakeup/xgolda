@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { listWorkspaceFiles } from "../src/lib/workspace-files.ts";
 import {
-  listWorkspaceFiles,
   mimeForFile,
   previewKind,
   formatSize,
-} from "../src/lib/workspace-files.ts";
+} from "../src/lib/file-meta.ts";
 
 describe("workspace-files", () => {
   let tmp = "";

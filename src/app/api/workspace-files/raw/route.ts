@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
 import { assertWorkspacePath } from "@/lib/agent/workspace";
-import { mimeForFile } from "@/lib/workspace-files";
+import { mimeForFile } from "@/lib/file-meta";
 
 /**
  * GET /api/workspace-files/raw?sessionId=<id>&path=<relatif>

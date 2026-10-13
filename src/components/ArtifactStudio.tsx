@@ -24,7 +24,7 @@ import {
   formatSize,
   previewKind,
   type WorkspaceFile,
-} from "@/lib/workspace-files";
+} from "@/lib/file-meta";
 
 interface Props {
   onClose: () => void;
