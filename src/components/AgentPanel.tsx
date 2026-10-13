@@ -12,7 +12,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   decideApproval,
   getAgentStatus,
@@ -37,6 +37,19 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Gagal",
 };
 
+/** Parse hasil step → { ok, text } (tahan banting terhadap result aneh). */
+function parseStepResult(s: { result?: unknown }): { ok: boolean | null; text: string } {
+  try {
+    const r = s.result as { ok?: boolean; output?: string };
+    if (r && typeof r === "object") {
+      return { ok: r.ok ?? null, text: String(r.output ?? "").slice(0, 2000) };
+    }
+  } catch {
+    /* abaikan */
+  }
+  return { ok: null, text: "" };
+}
+
 export default function AgentPanel({ runId, onClose, onDone }: Props) {
   const [status, setStatus] = useState<AgentRunStatus | null>(null);
   const [error, setError] = useState("");
@@ -51,6 +64,8 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
   useEffect(() => {
     let alive = true;
     const poll = async () => {
+      // Hemat: jangan poll saat tab tidak terlihat (user balik → tick jalan lagi).
+      if (document.hidden) return;
       try {
         const s = await getAgentStatus(runId);
         if (!alive) return;
@@ -103,8 +118,32 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
 
   const runStatus = status?.run.status ?? "queued";
   const done = runStatus === "completed" || runStatus === "failed";
-  // Bubble jawaban: streaming dulu, fallback ke resultText dari status
-  const finalText = streamText || status?.run.resultText || "";
+  /** Rencana menciut otomatis saat run selesai (detailnya ada di daftar langkah). */
+  const [planOpen, setPlanOpen] = useState(true);
+  useEffect(() => {
+    if (done) setPlanOpen(false);
+  }, [done]);
+  /**
+   * SATU sumber kebenaran untuk jawaban final: saat run selesai, resultText
+   * tersimpan (lengkap) mengalahkan streamText (bisa terpotong bila SSE drop
+   * di tengah jalan). Saat run jalan, streamText live yang dipakai.
+   */
+  const finalText = done
+    ? status?.run.resultText || streamText || ""
+    : streamText || status?.run.resultText || "";
+  /**
+   * Kelompokkan pemanggilan tool berurutan yang sama (mis. web_search ×5)
+   * jadi satu baris — panel tidak rakus ruang untuk retry berulang.
+   */
+  const stepGroups = useMemo(() => {
+    const groups: { toolName: string; items: AgentRunStatus["steps"] }[] = [];
+    for (const s of status?.steps ?? []) {
+      const last = groups[groups.length - 1];
+      if (last && last.toolName === s.toolName) last.items.push(s);
+      else groups.push({ toolName: s.toolName, items: [s] });
+    }
+    return groups;
+  }, [status?.steps]);
   const finalMessage: ChatMessage = {
     id: `${runId}-final`,
     sessionId: "",
@@ -171,7 +210,7 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
         </button>
       </div>
 
-      <div className="max-h-56 overflow-y-auto px-3 py-2 space-y-1.5">
+      <div className="max-h-48 overflow-y-auto px-3 py-1.5">
         {error && <p className="text-xs text-red-400">{error}</p>}
 
         {/* Approval gate — perintah berbahaya menunggu keputusan */}
@@ -220,13 +259,24 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
           </div>
         )}
 
-        {/* Rencana — ringkas */}
+        {/* Rencana — ringkas, bisa diciutkan (menciut otomatis saat run selesai) */}
         {status && status.plan.length > 0 && (
           <div className="mb-2">
-            <p className="font-mono text-[9px] tracking-[0.15em] text-ink-faint mb-1">
-              RENCANA
-            </p>
-            <div className="space-y-0.5">
+            <button
+              onClick={() => setPlanOpen((v) => !v)}
+              className="w-full flex items-center gap-1 text-left"
+              aria-expanded={planOpen}
+            >
+              <span className="font-mono text-[9px] tracking-[0.15em] text-ink-faint">
+                RENCANA ({status.plan.length})
+              </span>
+              <ChevronDown
+                size={11}
+                className={`text-ink-faint transition-transform ${planOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {planOpen && (
+            <div className="space-y-0.5 mt-1">
               {status.plan.map((p, i) => {
                 // Centang jujur: hanya langkah yang benar-benar dilewati.
                 // Jangan tandai semua selesai hanya karena run berakhir.
@@ -250,60 +300,68 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
                 );
               })}
             </div>
+            )}
           </div>
         )}
 
-        {/* Langkah tool */}
-        {status?.steps.map((s) => {
-          const isOpen = expanded === s.id;
-          let resultOk: boolean | null = null;
-          let resultText = "";
-          try {
-            const r = s.result as { ok?: boolean; output?: string };
-            if (r && typeof r === "object") {
-              resultOk = r.ok ?? null;
-              resultText = String(r.output ?? "").slice(0, 2000);
-            }
-          } catch {
-            /* abaikan */
-          }
-          return (
-            <div
-              key={s.id}
-              className="rounded-lg border border-line-hair bg-obsidian-900 overflow-hidden"
-            >
-              <button
-                onClick={() => setExpanded(isOpen ? null : s.id)}
-                className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-obsidian-850 transition-colors"
-              >
-                <Wrench size={11} className="text-signal shrink-0" />
-                <span className="font-mono text-[11px] text-ink truncate flex-1">
-                  {s.toolName}
-                </span>
-                <span className="font-mono text-[9px] text-ink-faint shrink-0">
-                  {s.durationMs}ms
-                </span>
-                {resultOk === true && (
-                  <CheckCircle2 size={11} className="text-green-400 shrink-0" />
+        {/* Langkah tool — dikelompokkan per tool berurutan, baris rapat tanpa kartu per langkah */}
+        <div className="divide-y divide-line-hair">
+          {stepGroups.map((g, gi) => {
+            const gKey = `g${gi}`;
+            const isOpen = expanded === gKey;
+            const totalMs = g.items.reduce((a, s) => a + (s.durationMs ?? 0), 0);
+            const parsed = g.items.map((s) => parseStepResult(s));
+            const anyFail = parsed.some((p) => p.ok === false);
+            const allOk = parsed.length > 0 && parsed.every((p) => p.ok === true);
+            return (
+              <div key={gKey}>
+                <button
+                  onClick={() => setExpanded(isOpen ? null : gKey)}
+                  className="w-full flex items-center gap-1.5 px-1 py-1 text-left hover:bg-obsidian-850 transition-colors"
+                >
+                  <Wrench size={11} className="text-signal shrink-0" />
+                  <span className="font-mono text-[11px] text-ink truncate flex-1">
+                    {g.toolName}
+                    {g.items.length > 1 && (
+                      <span className="text-ink-faint ml-1">×{g.items.length}</span>
+                    )}
+                  </span>
+                  <span className="font-mono text-[9px] text-ink-faint shrink-0">
+                    {totalMs}ms
+                  </span>
+                  {allOk && (
+                    <CheckCircle2 size={11} className="text-green-400 shrink-0" />
+                  )}
+                  {anyFail && (
+                    <XCircle size={11} className="text-red-400 shrink-0" />
+                  )}
+                  <ChevronDown
+                    size={11}
+                    className={`text-ink-faint shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {isOpen && (
+                  <div className="pb-1.5 space-y-1">
+                    {g.items.map((s, si) => {
+                      const p = parsed[si];
+                      return (
+                        <div key={s.id} className="pl-5">
+                          <p className="font-mono text-[9px] text-ink-faint">
+                            #{si + 1} · {s.durationMs}ms{" "}
+                            {p.ok === true ? "✓" : p.ok === false ? "✗" : ""}
+                          </p>
+                          <pre className="font-mono text-[10px] text-ink-mute whitespace-pre-wrap break-words bg-void rounded-md p-2 border border-line-hair max-h-40 overflow-y-auto">
+                            {p.text || "(kosong)"}
+                          </pre>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
-                {resultOk === false && (
-                  <XCircle size={11} className="text-red-400 shrink-0" />
-                )}
-                <ChevronDown
-                  size={11}
-                  className={`text-ink-faint shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {isOpen && (
-                <div className="px-2.5 pb-2">
-                  <pre className="font-mono text-[10px] text-ink-mute whitespace-pre-wrap break-words bg-void rounded-md p-2 border border-line-hair max-h-40 overflow-y-auto">
-                    {resultText || "(kosong)"}
-                  </pre>
-                </div>
-              )}
-            </div>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
 
         {status && status.run.error && (
           <p className="text-[11px] text-red-400 font-mono">{status.run.error}</p>
