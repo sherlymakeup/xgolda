@@ -112,6 +112,17 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
 
   return (
     <>
+    {/* Bubble konfirmasi: agen sudah terima prompt, baru proses dimulai */}
+    <MessageItem
+      message={{
+        id: `${runId}-ack`,
+        sessionId: "",
+        role: "assistant",
+        content: "Siap bos, diterima — gue kerjain sekarang.",
+        reasoningContent: "",
+        createdAt: Date.now(),
+      }}
+    />
     <div className="rounded-xl border border-signal/40 bg-obsidian-950 shadow-signal-glow overflow-hidden rise-in">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line-hair">
         <span

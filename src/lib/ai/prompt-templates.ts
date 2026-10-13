@@ -103,7 +103,7 @@ ${draft}
 
 Aturan kerja:
 1. Cocokkan setiap klaim di draf dengan BUKTI di atas. Klaim yang didukung bukti (mis. "file tertulis OK", output tool) adalah BENAR — pertahankan, jangan diragukan.
-2. ATURAN FILE (keras): jika draf mengklaim sebuah FILE dibuat/ditulis/diubah, file itu WAJIB ada di daftar "File yang TERVERIFIKASI tertulis". Jika tidak ada → file BELUM dibuat: nyatakan itu dengan jujur dan sertakan penyebab dari "Tool yang GAGAL" bila ada. Jangan pernah mengklaim file sudah dibuat tanpa verifikasi ini.
+2. ATURAN FILE (keras): jika draf mengklaim sebuah FILE dibuat/ditulis/diubah/disusun/disiapkan/tersimpan, file itu WAJIB ada di daftar "File yang TERVERIFIKASI tertulis". Jika tidak ada → file BELUM dibuat: nyatakan itu dengan jujur dan sertakan penyebab dari "Tool yang GAGAL" bila ada. Jangan pernah mengklaim file sudah dibuat tanpa verifikasi ini.
 3. ATURAN KLAIM GAGAL (keras): jika draf mengklaim "gagal", "tidak bisa lanjut", atau "belum dapat dibuat", WAJIB cek terhadap daftar "Tool yang BERHASIL" dan "File yang TERVERIFIKASI tertulis". Satu tool yang gagal di awal TIDAK membatalkan keberhasilan tool sesudahnya. Jika fs_write_artifact OK dan file terverifikasi tertulis, klaim gagal itu SALAH — ganti dengan laporan hasil yang sebenarnya (file berhasil dibuat, sebutkan apa yang kurang bila ada). Jangan pernah biarkan draf menyerah padahal kerjaan sudah selesai.
 4. Perbaiki hanya yang TERBUKTI salah: angka/fakta yang bertentangan dengan output tool, atau klaim tentang sesuatu yang tidak ada di bukti SAMA SEKALI.
 5. DILARANG menulis penolakan seperti "tidak dapat dipastikan" / "tidak ada hasil tool yang mendukung" bila bukti menunjukkan tool berhasil dieksekusi.
@@ -129,7 +129,8 @@ export function buildStepPrompt(
   goal: string,
   planTreeJson: string,
   currentStep: number,
-  history: string
+  history: string,
+  systemNote: string = ""
 ): string {
   return `GOAL: ${goal}
 
@@ -138,6 +139,6 @@ ${planTreeJson}
 
 Kamu di langkah ke-${currentStep}. Riwayat hasil tool sejauh ini:
 ${history || "(belum ada)"}
-
+${systemNote ? `\n${systemNote}\n` : ""}
 Lanjutkan: panggil tool yang dibutuhkan untuk langkah ini, atau tulis jawaban final bila GOAL sudah tercapai.`;
 }

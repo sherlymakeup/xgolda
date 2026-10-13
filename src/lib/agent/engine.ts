@@ -149,6 +149,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
 
     let finalAnswer = "";
     let step = 0;
+    // Catatan sistem untuk iterasi berikutnya (mis. toolcall malformed)
+    let systemNote = "";
 
     while (step < maxSteps) {
       step++;
@@ -168,16 +170,35 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
               opts.goal,
               planTreeJson,
               step,
-              summarizeToolHistory(history)
+              summarizeToolHistory(history),
+              systemNote
             ),
           },
         ],
         { model, temperature: 0.4 }
       );
+      systemNote = ""; // terkonsumsi
 
-      const { calls, cleaned } = extractToolCalls(content);
+      const { calls, cleaned, malformed } = extractToolCalls(content);
+
+      // Toolcall malformed = tool TIDAK pernah dieksekusi. JANGAN jadikan
+      // jawaban final (itu yang bikin agen klaim "sudah dibuat" padahal tidak).
+      // Beri tahu model dan beri kesempatan memperbaiki.
+      if (malformed > 0) {
+        systemNote =
+          `PERINGATAN SISTEM: ${malformed} blok <toolcall> yang kamu kirim ` +
+          `GAGAL di-parse (JSON tidak valid — biasanya newline/quote di dalam ` +
+          `string args tidak di-escape). Tool tersebut BELUM dijalankan sama sekali. ` +
+          `Kirim ulang toolcall-nya dengan JSON valid: escape newline jadi \\n dan ` +
+          `tanda kutip jadi \\" di dalam string. JANGAN mengklaim tool sudah ` +
+          `dijalankan sebelum kamu menerima hasil tool.`;
+      }
 
       if (calls.length === 0) {
+        if (malformed > 0) {
+          // Semua toolcall rusak — ulangi, jangan jadikan jawaban final
+          continue;
+        }
         finalAnswer = cleaned || content;
         break;
       }
@@ -364,7 +385,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     }
 
     // Simpan juga di baris run agar API status/panel bisa menampilkannya
-    // walau tanpa sessionId. currentStep = total plan → semua langkah plan
+    // walau tanpa sessionId. currentStep = total plan + 1 → semua langkah plan
     // tampil centang (run selesai = rencana dijalankan sampai akhir).
     let totalPlanSteps = 0;
     try {
@@ -374,7 +395,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     }
     await setStatus("completed", {
       finishedAt: Date.now(),
-      currentStep: totalPlanSteps,
+      currentStep: totalPlanSteps + 1,
       ...(finalAnswer ? { resultText: finalAnswer } : {}),
     });
     emitRunEvent(opts.runId, { type: "done", status: "completed" });

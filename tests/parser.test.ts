@@ -57,11 +57,29 @@ describe("extractToolCalls", () => {
     assert.ok(cleaned.includes("Baik"));
   });
 
-  it("JSON rusak diabaikan, tidak crash", () => {
-    const { calls } = extractToolCalls(
+  it("JSON rusak dihitung sebagai malformed (tidak diam-diam dibuang)", () => {
+    const { calls, malformed } = extractToolCalls(
       '<toolcall>{"name": oops}</toolcall> teks'
     );
     assert.equal(calls.length, 0);
+    assert.equal(malformed, 1);
+  });
+
+  it("newline tidak di-escape di dalam string = malformed (kasus tulis file)", () => {
+    const { calls, malformed } = extractToolCalls(
+      '<toolcall>{"name": "fs_write_artifact", "args": {"filename": "spec.md", "content": "# Spec\nOS: Windows"}}</toolcall> sudah dibuat'
+    );
+    assert.equal(calls.length, 0);
+    assert.equal(malformed, 1);
+  });
+
+  it("campuran valid + rusak: valid dieksekusi, rusak dihitung", () => {
+    const { calls, malformed } = extractToolCalls(
+      '<toolcall>{"name": "system_info", "args": {}}</toolcall> <toolcall>{rusak}</toolcall>'
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, "system_info");
+    assert.equal(malformed, 1);
   });
 
   it("tanpa toolcall = kosong", () => {

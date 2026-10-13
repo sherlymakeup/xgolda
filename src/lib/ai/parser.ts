@@ -94,13 +94,17 @@ export interface ToolCallIntent {
 /**
  * Ekstrak intent pemanggilan tool dari teks model.
  * Format: <toolcall>{"name": "...", "args": {...}}</toolcall>
- * Mengembalikan sisa teks tanpa blok toolcall.
+ * Mengembalikan sisa teks tanpa blok toolcall + jumlah blok yang JSON-nya rusak.
+ * Blok rusak TIDAK boleh diabaikan diam-diam — pemanggil wajib memberitahu
+ * model agar memperbaikinya, bukan menganggap tool sudah dijalankan.
  */
 export function extractToolCalls(text: string): {
   calls: ToolCallIntent[];
   cleaned: string;
+  malformed: number;
 } {
   const calls: ToolCallIntent[] = [];
+  let malformed = 0;
   const re = /<toolcall>\s*([\s\S]*?)\s*<\/toolcall>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
@@ -112,11 +116,14 @@ export function extractToolCalls(text: string): {
           args:
             parsed.args && typeof parsed.args === "object" ? parsed.args : {},
         });
+      } else {
+        malformed++;
       }
     } catch {
-      // JSON rusak — abaikan blok ini, jangan crash
+      // JSON rusak — hitung, jangan crash. Pemanggil wajib memberitahu model.
+      malformed++;
     }
   }
   const cleaned = text.replace(re, "").trim();
-  return { calls, cleaned };
+  return { calls, cleaned, malformed };
 }
