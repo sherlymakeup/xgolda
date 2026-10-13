@@ -249,16 +249,20 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         // benar-benar tertulis + tool yang gagal. Critic wajib memakainya.
         const written: string[] = [];
         const failed: string[] = [];
+        const succeeded: string[] = [];
         for (const h of history) {
           try {
             const args = JSON.parse(h.argsJson) as { filename?: string };
             const res = JSON.parse(h.resultJson) as { ok?: boolean; output?: string };
             if (h.toolName === "fs_write_artifact" && res.ok && args.filename) {
               written.push(String(args.filename));
-            } else if (res.ok === false) {
+            }
+            if (res.ok === false) {
               failed.push(
                 `${h.toolName}: ${String(res.output || "").slice(0, 200)}`
               );
+            } else if (res.ok === true) {
+              succeeded.push(h.toolName);
             }
           } catch {
             /* abaikan baris rusak */
@@ -267,6 +271,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         const verified =
           `File yang TERVERIFIKASI tertulis (deterministik): ` +
           (written.length > 0 ? written.join(", ") : "(tidak ada)") +
+          `\nTool yang BERHASIL: ` +
+          (succeeded.length > 0 ? Array.from(new Set(succeeded)).join(", ") : "(tidak ada)") +
           `\nTool yang GAGAL: ` +
           (failed.length > 0 ? failed.join(" | ") : "(tidak ada)");
         const draftLen = finalAnswer.trim().length;
@@ -358,9 +364,17 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     }
 
     // Simpan juga di baris run agar API status/panel bisa menampilkannya
-    // walau tanpa sessionId.
+    // walau tanpa sessionId. currentStep = total plan → semua langkah plan
+    // tampil centang (run selesai = rencana dijalankan sampai akhir).
+    let totalPlanSteps = 0;
+    try {
+      totalPlanSteps = (JSON.parse(planTreeJson) as unknown[]).length;
+    } catch {
+      /* abaikan */
+    }
     await setStatus("completed", {
       finishedAt: Date.now(),
+      currentStep: totalPlanSteps,
       ...(finalAnswer ? { resultText: finalAnswer } : {}),
     });
     emitRunEvent(opts.runId, { type: "done", status: "completed" });

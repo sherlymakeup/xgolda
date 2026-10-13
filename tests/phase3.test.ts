@@ -76,6 +76,7 @@ describe("Fase 3", () => {
     assert.match(p, /fs_write_artifact/);
     assert.match(p, /BUKTI EKSEKUSI TOOL/);
     assert.match(p, /ATURAN FILE/);
+    assert.match(p, /ATURAN KLAIM GAGAL/);
     assert.match(p, /laporan\.md/);
     // Critic tidak boleh menolak membabi buta
     assert.match(p, /DILARANG menulis penolakan/);

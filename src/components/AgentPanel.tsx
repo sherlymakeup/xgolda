@@ -207,8 +207,9 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
             </p>
             <div className="space-y-0.5">
               {status.plan.map((p, i) => {
-                const stepDone =
-                  status.run.currentStep > p.step || done;
+                // Centang jujur: hanya langkah yang benar-benar dilewati.
+                // Jangan tandai semua selesai hanya karena run berakhir.
+                const stepDone = status.run.currentStep > p.step;
                 return (
                   <div key={i} className="flex items-center gap-1.5 text-[11px] leading-tight">
                     {stepDone ? (

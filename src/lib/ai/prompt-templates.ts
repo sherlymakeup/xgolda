@@ -94,9 +94,10 @@ ${draft}
 Aturan kerja:
 1. Cocokkan setiap klaim di draf dengan BUKTI di atas. Klaim yang didukung bukti (mis. "file tertulis OK", output tool) adalah BENAR — pertahankan, jangan diragukan.
 2. ATURAN FILE (keras): jika draf mengklaim sebuah FILE dibuat/ditulis/diubah, file itu WAJIB ada di daftar "File yang TERVERIFIKASI tertulis". Jika tidak ada → file BELUM dibuat: nyatakan itu dengan jujur dan sertakan penyebab dari "Tool yang GAGAL" bila ada. Jangan pernah mengklaim file sudah dibuat tanpa verifikasi ini.
-3. Perbaiki hanya yang TERBUKTI salah: angka/fakta yang bertentangan dengan output tool, atau klaim tentang sesuatu yang tidak ada di bukti SAMA SEKALI.
-4. DILARANG menulis penolakan seperti "tidak dapat dipastikan" / "tidak ada hasil tool yang mendukung" bila bukti menunjukkan tool berhasil dieksekusi.
-5. Jaga gaya bahasa draf. Jangan tambah bagian "Belum dikumpulkan" bila data sudah ada di bukti.
+3. ATURAN KLAIM GAGAL (keras): jika draf mengklaim "gagal", "tidak bisa lanjut", atau "belum dapat dibuat", WAJIB cek terhadap daftar "Tool yang BERHASIL" dan "File yang TERVERIFIKASI tertulis". Satu tool yang gagal di awal TIDAK membatalkan keberhasilan tool sesudahnya. Jika fs_write_artifact OK dan file terverifikasi tertulis, klaim gagal itu SALAH — ganti dengan laporan hasil yang sebenarnya (file berhasil dibuat, sebutkan apa yang kurang bila ada). Jangan pernah biarkan draf menyerah padahal kerjaan sudah selesai.
+4. Perbaiki hanya yang TERBUKTI salah: angka/fakta yang bertentangan dengan output tool, atau klaim tentang sesuatu yang tidak ada di bukti SAMA SEKALI.
+5. DILARANG menulis penolakan seperti "tidak dapat dipastikan" / "tidak ada hasil tool yang mendukung" bila bukti menunjukkan tool berhasil dieksekusi.
+6. Jaga gaya bahasa draf. Jangan tambah bagian "Belum dikumpulkan" bila data sudah ada di bukti.
 
 Keluarkan JAWABAN FINAL yang sudah dikoreksi — langsung jawabannya saja, tanpa menjelaskan proses pemeriksamu.`;
 }
