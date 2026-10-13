@@ -146,42 +146,237 @@ export async function compileArtifact(
 }
 
 /** Render markdown ringan (tanpa dep tambahan): code fence, inline code, bold, heading, list. */
+/**
+ * Renderer markdown ringan (tanpa dependensi) untuk bubble chat.
+ * Mendukung: heading, paragraf, bold, italic, strikethrough, inline code,
+ * code fence, link (hanya http/https/mailto — javascript: ditolak),
+ * list unordered/ordered + bersarang, blockquote, hr, dan tabel GFM.
+ * Aman dari XSS: seluruh input di-escape dulu; hanya tag yang dihasilkan
+ * fungsi ini yang masuk HTML (dipakai via dangerouslySetInnerHTML).
+ */
 export function renderMarkdown(src: string): string {
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const blocks: string[] = [];
-  // Ekstrak code fence dulu agar tidak diproses sebagai markdown
-  const fenced = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    blocks.push(
+
+  // 1. Ekstrak code fence dulu agar tidak diproses sebagai markdown.
+  const fenced: string[] = [];
+  const noFence = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    fenced.push(
       `<pre><code class="language-${esc(lang || "text")}">${esc(code.replace(/\n$/, ""))}</code></pre>`
     );
-    return `\u0000${blocks.length - 1}\u0000`;
+    return `\\u0000${fenced.length - 1}\\u0000`;
   });
-  let html = esc(fenced);
-  html = html
-    .replace(/^### (.*)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.*)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.*)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/^\s*[-*] (.*)$/gm, "<li>$1</li>")
-    .replace(/^\s*\d+\. (.*)$/gm, "<li>$1</li>");
-  // Bungkus li berurutan
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
-  // Paragraf: baris non-tag
-  html = html
-    .split("\n")
-    .map((line) => {
+
+  // 2. Escape, lalu ekstrak inline code agar `**` dll. di dalamnya tidak diproses.
+  let html = esc(noFence);
+  const inlineCodes: string[] = [];
+  html = html.replace(/`([^`\n]+)`/g, (_m, code) => {
+    inlineCodes.push(`<code>${code}</code>`);
+    return `\\u0001${inlineCodes.length - 1}\\u0001`;
+  });
+
+  // Format inline: link → bold → strikethrough → italic.
+  const inline = (s: string): string => {
+    let out = s.replace(
+      /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+      (_m, text, url) =>
+        /^(https?:\/\/|mailto:|#|\/)/i.test(url)
+          ? `<a href="${url}" target="_blank" rel="noreferrer">${text}</a>`
+          : text
+    );
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+    out = out.replace(/(^|[^\w])_([^_\n]+)_/g, "$1<em>$2</em>");
+    return out;
+  };
+
+  // --- Parser blok ---
+  const lines = html.split("\n");
+
+  const splitRow = (line: string): string[] | null => {
+    const t = line.trim();
+    if (!t.startsWith("|")) return null;
+    return t
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((c) => c.trim());
+  };
+
+  const parseTable = (i: number): { html: string; next: number } | null => {
+    const header = splitRow(lines[i]);
+    if (!header || i + 1 >= lines.length) return null;
+    const sep = splitRow(lines[i + 1]);
+    if (!sep || sep.length !== header.length) return null;
+    const aligns: string[] = [];
+    for (const c of sep) {
+      const t = c.trim();
+      if (!/^:?-{1,}:?$/.test(t)) return null;
+      aligns.push(t.startsWith(":") && t.endsWith(":") ? "center" : t.endsWith(":") ? "right" : "left");
+    }
+    const rows: string[][] = [];
+    let j = i + 2;
+    while (j < lines.length) {
+      const row = splitRow(lines[j]);
+      if (!row) break;
+      rows.push(row);
+      j++;
+    }
+    const th = header
+      .map((c, k) => `<th style="text-align:${aligns[k]}">${inline(c)}</th>`)
+      .join("");
+    const tb = rows
+      .map(
+        (row) =>
+          `<tr>${row
+            .map((c, k) => `<td style="text-align:${aligns[k] ?? "left"}">${inline(c)}</td>`)
+            .join("")}</tr>`
+      )
+      .join("");
+    return {
+      html: `<div class="table-wrap"><table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table></div>`,
+      next: j,
+    };
+  };
+
+  interface ListItem {
+    indent: number;
+    ordered: boolean;
+    text: string;
+    children: ListItem[];
+  }
+  const parseList = (i: number): { html: string; next: number } => {
+    const raw: ListItem[] = [];
+    let j = i;
+    while (j < lines.length) {
+      const m = lines[j].match(/^( *)([-*]|\d+[.)])\s+(.*)$/);
+      if (!m) break;
+      raw.push({
+        indent: m[1].length,
+        ordered: /^\d/.test(m[2]),
+        text: m[3],
+        children: [],
+      });
+      j++;
+    }
+    // Bangun pohon bersarang dari indentasi (2 spasi = 1 level).
+    const roots: ListItem[] = [];
+    const stack: ListItem[] = [];
+    for (const item of raw) {
+      while (stack.length > 0 && stack[stack.length - 1].indent >= item.indent) {
+        stack.pop();
+      }
+      if (stack.length === 0) roots.push(item);
+      else stack[stack.length - 1].children.push(item);
+      stack.push(item);
+    }
+    const renderItems = (items: ListItem[]): string => {
+      let out = "";
+      let k = 0;
+      while (k < items.length) {
+        const ordered = items[k].ordered;
+        const tag = ordered ? "ol" : "ul";
+        let inner = "";
+        while (k < items.length && items[k].ordered === ordered) {
+          const it = items[k];
+          inner += `<li>${inline(it.text)}${it.children.length > 0 ? renderItems(it.children) : ""}</li>`;
+          k++;
+        }
+        out += `<${tag}>${inner}</${tag}>`;
+      }
+      return out;
+    };
+    return { html: renderItems(roots), next: j };
+  };
+
+  const parseBlocks = (blockLines: string[]): string => {
+    const out: string[] = [];
+    let i = 0;
+    while (i < blockLines.length) {
+      const line = blockLines[i];
       const t = line.trim();
-      if (!t) return "";
-      if (/^<(h\d|ul|li|pre|code)/.test(t)) return line;
-      if (/^<\/|^<(strong|em)/.test(t)) return line;
-      return `<p>${line}</p>`;
-    })
-    .join("\n");
-  // Kembalikan code fence
-  html = html.replace(/\u0000(\d+)\u0000/g, (_m, i) => blocks[Number(i)]);
-  return html;
+      if (!t) {
+        i++;
+        continue;
+      }
+      // Code fence (placeholder) — berdiri sendiri.
+      if (t.includes("\\u0000")) {
+        out.push(line);
+        i++;
+        continue;
+      }
+      // Heading
+      const hm = t.match(/^(#{1,6})\s+(.*)$/);
+      if (hm) {
+        const level = hm[1].length;
+        out.push(`<h${level}>${inline(hm[2])}</h${level}>`);
+        i++;
+        continue;
+      }
+      // HR
+      if (/^(\*\*\*|---|___)\s*$/.test(t)) {
+        out.push("<hr>");
+        i++;
+        continue;
+      }
+      // Tabel GFM (header + separator)
+      if (t.startsWith("|")) {
+        const table = parseTable(i);
+        if (table) {
+          out.push(table.html);
+          i = table.next;
+          continue;
+        }
+      }
+      // Blockquote (rekursif — isinya bisa list/paragraf).
+      // `>` sudah ter-escape jadi `&gt;` sebelum parser blok jalan.
+      if (t.startsWith("&gt;")) {
+        const inner: string[] = [];
+        while (i < blockLines.length && blockLines[i].trim().startsWith("&gt;")) {
+          inner.push(blockLines[i].replace(/^\s*&gt;\s?/, ""));
+          i++;
+        }
+        out.push(`<blockquote>${parseBlocks(inner)}</blockquote>`);
+        continue;
+      }
+      // List
+      if (/^( *)([-*]|\d+[.)])\s+/.test(line)) {
+        const list = parseList(i);
+        out.push(list.html);
+        i = list.next;
+        continue;
+      }
+      // Paragraf: gabung baris berurutan (soft break → <br>).
+      const para: string[] = [line];
+      i++;
+      while (i < blockLines.length) {
+        const nt = blockLines[i].trim();
+        if (
+          !nt ||
+          nt.includes("\\u0000") ||
+          /^(#{1,6})\s+/.test(nt) ||
+          /^(\*\*\*|---|___)\s*$/.test(nt) ||
+          nt.startsWith("&gt;") ||
+          nt.startsWith("|") ||
+          /^( *)([-*]|\d+[.)])\s+/.test(blockLines[i])
+        ) {
+          break;
+        }
+        para.push(blockLines[i]);
+        i++;
+      }
+      out.push(`<p>${para.map((p) => inline(p.trim())).join("<br>")}</p>`);
+    }
+    return out.join("\n");
+  };
+
+  let rendered = parseBlocks(lines);
+
+  // Kembalikan placeholder inline code & code fence.
+  rendered = rendered.replace(/\\u0001(\d+)\\u0001/g, (_m, idx) => inlineCodes[Number(idx)]);
+  rendered = rendered.replace(/\\u0000(\d+)\\u0000/g, (_m, idx) => fenced[Number(idx)]);
+  return rendered;
 }
 
 /** Lampiran gambar untuk vision (upload via /api/uploads). */
