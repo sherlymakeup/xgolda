@@ -69,11 +69,14 @@ describe("Fase 3", () => {
     assert.match(r.output, /wajib diisi/);
   });
 
-  it("buildCriticPrompt memuat goal + draf", () => {
-    const p = buildCriticPrompt("buatkan laporan", "draf jawaban");
+  it("buildCriticPrompt memuat goal + draf + bukti tool", () => {
+    const p = buildCriticPrompt("buatkan laporan", "draf jawaban", "[1] fs_write_artifact => OK");
     assert.match(p, /buatkan laporan/);
     assert.match(p, /draf jawaban/);
-    assert.match(p, /halusinasi/);
+    assert.match(p, /fs_write_artifact/);
+    assert.match(p, /BUKTI EKSEKUSI TOOL/);
+    // Critic tidak boleh menolak membabi buta
+    assert.match(p, /DILARANG menulis penolakan/);
   });
 
   it("system prompt memuat persona + memori", () => {

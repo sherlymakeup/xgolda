@@ -163,7 +163,8 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
             <p className="text-xs text-ink-faint px-2 py-6 leading-relaxed">
               Belum ada artifact.
               <br />
-              Minta agen membuatkan kode — file tersimpan otomatis di sini.
+              File yang dibuat agen tersimpan di folder workspace thread ini.
+              Media yang di-generate (gambar/audio) muncul di sini.
             </p>
           )}
           {list.map((a) => {

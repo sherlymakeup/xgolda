@@ -73,33 +73,37 @@ ${toolManifest}
 Pola kerja: pahami goal → cek skill relevan → rencanakan 2-5 langkah → eksekusi satu per satu via tool → verifikasi via terminal_exec → simpulkan.`;
 }
 
-export function buildCriticPrompt(goal: string, draft: string): string {
-  return `Kamu adalah KRITIKUS independen. Tugasmu: verifikasi draf jawaban agen sebelum diserahkan ke user.
+export function buildCriticPrompt(goal: string, draft: string, toolSummary: string): string {
+  return `Kamu adalah editor QA. Tugasmu: memoles draf jawaban agen — BUKAN menolaknya.
 
 GOAL AWAL:
 ${goal}
 
+BUKTI EKSEKUSI TOOL (fakta — inilah yang benar-benar terjadi):
+${toolSummary || "(tidak ada tool dipanggil)"}
+
 DRAF JAWABAN AGEN:
 ${draft}
 
-Periksa dengan ketat:
-1. Apakah goal benar-benar tercapai, atau agen mengklaim selesai padahal belum?
-2. Adakah kesalahan faktual, angka ngawur, atau halusinasi (klaim tanpa didukung hasil tool)?
-3. Adakah langkah yang terlewat atau asumsi yang tidak diuji?
-4. Apakah ada informasi sensitif yang bocor (nama penyedia model/API di balik layar, token, path rahasia)?
+Aturan kerja:
+1. Cocokkan setiap klaim di draf dengan BUKTI di atas. Klaim yang didukung bukti (mis. "file tertulis OK", output tool) adalah BENAR — pertahankan, jangan diragukan.
+2. Perbaiki hanya yang TERBUKTI salah: angka/fakta yang bertentangan dengan output tool, atau klaim tentang sesuatu yang tidak ada di bukti SAMA SEKALI.
+3. DILARANG menulis penolakan seperti "tidak dapat dipastikan" / "tidak ada hasil tool yang mendukung" bila bukti menunjukkan tool berhasil dieksekusi.
+4. Jaga gaya bahasa draf. Jangan tambah bagian "Belum dikumpulkan" bila data sudah ada di bukti.
 
-Keluarkan JAWABAN FINAL yang sudah dikoreksi: pertahankan yang benar, perbaiki yang salah, hapus yang ngawur. Jika draf sudah bagus, keluarkan apa adanya dengan sedikit pemolesan. Jangan menjelaskan proses kritikmu — langsung jawabannya saja.`;
+Keluarkan JAWABAN FINAL yang sudah dikoreksi — langsung jawabannya saja, tanpa menjelaskan proses pemeriksamu.`;
 }
 
 export function buildPlannerPrompt(goal: string): string {
   return `Buat rencana eksekusi bertahap untuk GOAL berikut. Balas HANYA dengan JSON array valid, tanpa markdown fence, tanpa penjelasan.
+PENTING: title dan description WAJIB dalam Bahasa Indonesia.
 
 GOAL: ${goal}
 
 Format:
 [{"step": 1, "title": "...", "description": "...", "tool": "nama_tool_atau_null"}]
 
-Maksimal 8 langkah. Tool yang tersedia: sqlite_query, fs_write_artifact, fs_read_artifact, fs_list_artifacts, terminal_exec, read_skill.`;
+Maksimal 8 langkah. Tool yang tersedia: sqlite_query, fs_write_artifact, fs_read_artifact, fs_list_artifacts, terminal_exec, read_skill, delegate_task, system_info, web_search, web_fetch, generate_image, text_to_speech, remember, recall.`;
 }
 
 export function buildStepPrompt(

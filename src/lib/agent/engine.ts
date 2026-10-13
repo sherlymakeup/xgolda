@@ -227,12 +227,22 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         "Langkah maksimum tercapai. Riwayat eksekusi tool tersimpan dan bisa dilihat di status run.";
     }
 
-    // CRITIC PASS: verifikasi independen sebelum jawaban final diserahkan
-    if (finalAnswer && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
+    // CRITIC PASS: verifikasi independen sebelum jawaban final diserahkan.
+    // Hanya bila ada eksekusi tool (ada bukti yang bisa diverifikasi).
+    if (finalAnswer && history.length > 0 && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
       try {
         const { content: corrected } = await chatOnce(
-          [{ role: "user", content: buildCriticPrompt(opts.goal, finalAnswer) }],
-          { model, temperature: 0.3 }
+          [
+            {
+              role: "user",
+              content: buildCriticPrompt(
+                opts.goal,
+                finalAnswer,
+                summarizeToolHistory(history)
+              ),
+            },
+          ],
+          { model, temperature: 0.2 }
         );
         if (corrected.trim()) finalAnswer = corrected.trim();
       } catch (e) {
