@@ -96,8 +96,10 @@ export default function AgentTerminalPanel({ runIds, open, onClose, onActivityCh
 
   if (!open) return null;
 
+  // In-flow (seperti Studio): ikut menggeser kolom chat, bukan overlay.
+  // Eksklusivitas Studio XOR Terminal diatur di page.tsx.
   return (
-    <div className="fixed right-0 top-0 bottom-0 w-[340px] max-w-[88vw] z-40 bg-obsidian-950 border-l border-line-hair flex flex-col shadow-2xl rise-in">
+    <div className="h-full w-full md:w-[340px] shrink-0 border-l border-line-hair bg-obsidian-950 flex flex-col">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-line-hair shrink-0">
         <Terminal size={14} className="text-signal shrink-0" />
         <p className="font-mono text-[11px] tracking-[0.12em] text-ink flex-1">

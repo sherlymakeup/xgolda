@@ -43,7 +43,6 @@ export default function Home() {
   const [studioKey, setStudioKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState<View>("workspace");
-  const [mode, setMode] = useState("standard");
   const [defaultModel, setDefaultModel] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [error, setError] = useState("");
@@ -51,6 +50,20 @@ export default function Home() {
   const [termOpen, setTermOpen] = useState(false);
   const [termActive, setTermActive] = useState(false);
   const termAutoKey = useRef("");
+
+  // Panel kanan EKSKLUSIF: Studio XOR Terminal — satu buka, satu tutup.
+  // (Sebelumnya Terminal overlay `fixed` sehingga bisa numpuk dengan Studio.)
+  const openStudio = useCallback(() => {
+    setStudioOpen(true);
+    setTermOpen(false);
+    setStudioKey((k) => k + 1);
+  }, []);
+  const closeStudio = useCallback(() => setStudioOpen(false), []);
+  const openTerminal = useCallback(() => {
+    setTermOpen(true);
+    setStudioOpen(false);
+  }, []);
+  const closeTerminal = useCallback(() => setTermOpen(false), []);
 
   // Muat konfigurasi model dari server (nilai env asli)
   useEffect(() => {
@@ -79,10 +92,10 @@ export default function Home() {
       setTermActive(active);
       if (active && termAutoKey.current !== runIdsKey) {
         termAutoKey.current = runIdsKey;
-        setTermOpen(true);
+        openTerminal();
       }
     },
-    [runIdsKey]
+    [runIdsKey, openTerminal]
   );
 
   const refreshSessions = useCallback(async () => {
@@ -155,18 +168,15 @@ export default function Home() {
 
   const handleSend = async (
     text: string,
-    opts: { agentMode: boolean; model: string; mode: string; attachments?: Attachment[] }
+    opts: { agentMode: boolean; model: string; attachments?: Attachment[] }
   ) => {
     setError("");
     setView("workspace");
     const attachments = opts.attachments || [];
     // Safety net: SuggestionCards mem-bypass Omnibox, jadi deteksi juga di sini.
     const useAgent = opts.agentMode || looksLikeTask(text);
-    // Mode web/code memaksa agent mode; web dapat instruksi riset via terminal
-    const goal =
-      opts.mode === "web"
-        ? `Gunakan web (curl via terminal) bila perlu informasi terkini. ${text}`
-        : text || "Analisis gambar terlampir dan jelaskan isinya.";
+    // Semua kemampuan default aktif (web + reasoning tersedia via tool agen).
+    const goal = text || "Analisis gambar terlampir dan jelaskan isinya.";
     if (useAgent) {
       // Mode agen otonom: tampilkan panel, polling status
       try {
@@ -203,7 +213,6 @@ export default function Home() {
           },
         ]);
         setStudioKey((k) => k + 1); // agen mungkin menulis artifact
-        if (opts.mode === "code") setStudioOpen(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -299,9 +308,6 @@ export default function Home() {
       onSend={handleSend}
       streaming={streaming}
       defaultModel={defaultModel}
-      mode={mode}
-      onModeChange={setMode}
-      modelLabel={defaultModel}
     />
   );
 
@@ -319,8 +325,8 @@ export default function Home() {
         onNavigate={navigate}
         studioOpen={studioOpen}
         onToggleStudio={() => {
-          setStudioOpen(!studioOpen);
-          setStudioKey((k) => k + 1);
+          if (studioOpen) closeStudio();
+          else openStudio();
         }}
       />
 
@@ -348,7 +354,10 @@ export default function Home() {
             )}
           </span>
           <button
-            onClick={() => setTermOpen((v) => !v)}
+            onClick={() => {
+              if (termOpen) closeTerminal();
+              else openTerminal();
+            }}
             title="Aktivitas terminal agen"
             className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
               termOpen
@@ -372,8 +381,8 @@ export default function Home() {
           </span>
           <button
             onClick={() => {
-              setStudioOpen(!studioOpen);
-              setStudioKey((k) => k + 1);
+              if (studioOpen) closeStudio();
+              else openStudio();
             }}
             title="Artifact Studio"
             className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-all ${
@@ -413,7 +422,6 @@ export default function Home() {
                         handleSend(t, {
                           agentMode: false,
                           model: defaultModel,
-                          mode,
                         })
                       }
                     />
@@ -524,13 +532,13 @@ export default function Home() {
       <AgentTerminalPanel
         runIds={runs.map((r) => r.runId)}
         open={termOpen}
-        onClose={() => setTermOpen(false)}
+        onClose={closeTerminal}
         onActivityChange={handleTermActivity}
       />
 
       {/* Artifact Studio kanan */}
       {studioOpen && (
-        <ArtifactStudio onClose={() => setStudioOpen(false)} refreshKey={studioKey} sessionId={activeId} />
+        <ArtifactStudio onClose={closeStudio} refreshKey={studioKey} sessionId={activeId} />
       )}
     </div>
   );

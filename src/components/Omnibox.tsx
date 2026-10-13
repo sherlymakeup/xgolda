@@ -1,8 +1,7 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronDown, Loader2, Paperclip, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Loader2, Paperclip, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import ModePills from "./home/ModePills";
 import { looksLikeTask } from "@/lib/intent";
 import {
   listGatewayModels,
@@ -16,36 +15,20 @@ interface Props {
     opts: {
       agentMode: boolean;
       model: string;
-      mode: string;
       attachments?: Attachment[];
     }
   ) => void;
   streaming: boolean;
   /** Nama model dari server (/api/config) — nilai env asli, bukan hardcode. */
   defaultModel: string;
-  mode: string;
-  onModeChange: (m: string) => void;
-  /** Label untuk pil model pertama (nama model asli, boleh dipendekkan). */
-  modelLabel: string;
 }
-
-const PLACEHOLDERS: Record<string, string> = {
-  standard: "Tanya apa saja…",
-  think: "Tanya dengan penalaran mendalam…",
-  web: "Cari info terkini / riset web… (agen akan pakai curl via terminal)",
-  code: "Perintah untuk agen otonom… mis. buatkan komponen React tombol neon",
-};
 
 export default function Omnibox({
   onSend,
   streaming,
   defaultModel,
-  mode,
-  onModeChange,
-  modelLabel,
 }: Props) {
   const [text, setText] = useState("");
-  const [agentMode, setAgentMode] = useState(false);
   const [model, setModel] = useState("");
 
   // --- Model dropdown (daftar dinamis dari gateway) ---
@@ -127,16 +110,14 @@ export default function Omnibox({
   const submit = () => {
     const t = text.trim();
     if ((!t && attachments.length === 0) || streaming) return;
-    // Auto-route: perintah eksekusi langsung jadi agent task (toggle ikut nyala
-    // sebagai penanda). Approval gate tetap berlaku untuk perintah berbahaya.
-    const taskLike = looksLikeTask(t);
-    if (taskLike) setAgentMode(true);
-    const forceAgent =
-      agentMode || taskLike || mode === "web" || mode === "code";
+    // Semua kemampuan default aktif — tidak ada toggle manual.
+    // Auto-route: perintah eksekusi langsung jadi agent task (intent router).
+    // Web (search/fetch) + reasoning selalu tersedia untuk agen & chat.
+    // Approval gate tetap berlaku untuk perintah berbahaya.
+    const forceAgent = looksLikeTask(t);
     onSend(t, {
       agentMode: forceAgent,
       model: model || defaultModel,
-      mode,
       attachments: attachments.length > 0 ? attachments : undefined,
     });
     setText("");
@@ -144,20 +125,9 @@ export default function Omnibox({
     setModelOpen(false);
   };
 
-  const handleModeChange = (m: string) => {
-    onModeChange(m);
-    if (m === "web" || m === "code") setAgentMode(true);
-  };
-
   return (
     <div className="w-full">
-      <div
-        className={`rounded-2xl border bg-obsidian-950 transition-all ${
-          agentMode
-            ? "border-signal/60 shadow-signal-glow"
-            : "border-line-hair focus-within:border-line-mid"
-        }`}
-      >
+      <div className="rounded-2xl border bg-obsidian-950 transition-all border-line-hair focus-within:border-line-mid">
         {/* Attachment thumbnails */}
         {(attachments.length > 0 || uploading || uploadError) && (
           <div className="flex items-center gap-1.5 px-4 pt-2.5 flex-wrap">
@@ -201,19 +171,14 @@ export default function Omnibox({
               submit();
             }
           }}
-          placeholder={
-            agentMode && mode !== "web" && mode !== "code"
-              ? "Perintah untuk agen otonom… mis. buatkan komponen React tombol neon"
-              : (PLACEHOLDERS[mode] ?? "Tanya apa saja…")
-          }
+          placeholder="Tanya apa saja… atau perintahkan agen"
           rows={1}
           className="w-full bg-transparent resize-none outline-none px-4 pt-3 pb-1 text-sm placeholder:text-ink-faint max-h-40"
           style={{ fieldSizing: "content" } as React.CSSProperties}
         />
-        {/* Satu baris kontrol: mode + model + agent + attach + kirim */}
+        {/* Satu baris kontrol: model + attach + kirim (tanpa toggle mode) */}
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pt-1">
-          <ModePills mode={mode} onChange={handleModeChange} modelLabel={modelLabel} compact />
-          {/* Model selector dropdown */}
+          {/* Model selector dropdown — satu-satunya tempat nama model tampil */}
           <div className="relative">
             <button
               onClick={toggleModelDropdown}
@@ -297,20 +262,6 @@ export default function Omnibox({
               </>
             )}
           </div>
-
-          {/* Agent mode toggle */}
-          <button
-            onClick={() => setAgentMode(!agentMode)}
-            title="Mode agen otonom (plan → tool → eksekusi)"
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium border transition-all ${
-              agentMode
-                ? "bg-obsidian-850 border-signal text-signal shadow-pip-glow"
-                : "border-line-hair text-ink-mute hover:border-line-soft hover:text-ink"
-            }`}
-          >
-            <Bot size={13} />
-            Agent
-          </button>
 
           {/* Image attachment (vision) */}
           <input
