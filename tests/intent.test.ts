@@ -32,4 +32,16 @@ describe("looksLikeTask", () => {
     assert.equal(looksLikeTask("   "), false);
     assert.equal(looksLikeTask("coba carikan file lama"), true);
   });
+
+  it("mengupas sapaan/vokatif + verba kolokial (kasus nyata: 'Bos buatin...')", () => {
+    assert.equal(
+      looksLikeTask("Bos buatin file spec.md dengan konten spec device ini secara lengkap ya"),
+      true
+    );
+    assert.equal(looksLikeTask("Bos, bikinin script python dong"), true);
+    assert.equal(looksLikeTask("bang tolong buatin folder baru"), true);
+    assert.equal(looksLikeTask("tolong bos buatin laporan"), true);
+    // Sapaan saja tanpa perintah tetap bukan task
+    assert.equal(looksLikeTask("bos apa kabar"), false);
+  });
 });

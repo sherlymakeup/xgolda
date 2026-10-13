@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { renderMarkdown } from "@/lib/client-api";
 
 interface Props {
   reasoning: string;
@@ -11,7 +12,10 @@ interface Props {
 
 /** Accordion "Thought Engine" — collapsible Chain-of-Thought. */
 export default function ThoughtEngine({ reasoning, streaming, latencyMs }: Props) {
-  const [open, setOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  // Terbuka otomatis selama streaming (user melihat proses berpikir live),
+  // setelah selesai kembali ke pilihan manual.
+  const open = manualOpen || streaming;
   if (!reasoning && !streaming) return null;
 
   const secs =
@@ -20,7 +24,7 @@ export default function ThoughtEngine({ reasoning, streaming, latencyMs }: Props
   return (
     <div className="rounded-xl border border-line-hair bg-obsidian-950 overflow-hidden">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => setManualOpen(!manualOpen)}
         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-obsidian-900 transition-colors"
       >
         <span
@@ -40,10 +44,11 @@ export default function ThoughtEngine({ reasoning, streaming, latencyMs }: Props
       {open && (
         <div className="px-3.5 pb-3.5">
           <div className="border-l border-line-soft pl-3.5">
-            <pre className="font-mono text-[13px] leading-relaxed text-ink-mute whitespace-pre-wrap break-words">
-              {reasoning}
-              {streaming && <span className="text-signal">▍</span>}
-            </pre>
+            <div
+              className="prose-xgolda text-[13px] leading-relaxed text-ink-mute break-words"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(reasoning) }}
+            />
+            {streaming && <span className="text-signal">▍</span>}
           </div>
         </div>
       )}
