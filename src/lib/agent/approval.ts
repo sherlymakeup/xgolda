@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "../../db/index.ts";
 import { approvals } from "../../db/schema.ts";
-import { env } from "../../lib/env.ts";
+import { getConfig, num } from "../../lib/config.ts";
 
 export type ApprovalDecision = "approved" | "rejected" | "expired";
 
@@ -46,7 +46,8 @@ export async function requestApproval(
     createdAt: now,
   });
 
-  const timeoutMs = Math.max(5000, opts.timeoutMs ?? env.approvalTimeoutMs);
+  const cfg = await getConfig();
+  const timeoutMs = Math.max(5000, opts.timeoutMs ?? num(cfg.values.APPROVAL_TIMEOUT_MS, 300000));
   const deadline = Date.now() + timeoutMs;
 
   for (;;) {

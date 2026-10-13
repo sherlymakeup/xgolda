@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { getDb } from "../../db/index.ts";
 import { agentRuns, messages, toolExecutions } from "../../db/schema.ts";
 import { chatOnce } from "../ai/client.ts";
-import { env } from "../env.ts";
+import { getConfig, num } from "../config.ts";
 import { extractToolCalls } from "../ai/parser.ts";
 import {
   buildAgentSystemPrompt,
@@ -28,8 +28,9 @@ export interface AgentRunOptions {
  */
 export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
   const db = getDb();
-  const model = opts.model || env.defaultModel;
-  const maxSteps = env.agentMaxSteps;
+  const cfg = await getConfig();
+  const model = opts.model || cfg.values.DEFAULT_MODEL;
+  const maxSteps = num(cfg.values.AGENT_MAX_STEPS, 12);
   // Batas waktu keseluruhan run: 10 menit — cegah status 'running' abadi
   // bila gateway hang di luar timeout per-request.
   const RUN_TIMEOUT_MS = 10 * 60 * 1000;

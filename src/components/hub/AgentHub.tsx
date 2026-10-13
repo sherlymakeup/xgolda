@@ -7,6 +7,10 @@ import {
   FilePlus2,
   FileText,
   FolderOpen,
+  Globe,
+  Image,
+  Mic,
+  Newspaper,
   Plug,
   ShieldCheck,
   Terminal,
@@ -19,7 +23,7 @@ import { useState } from "react";
 /* Data — mirrors the real agent tool registry (src/lib/tools/registry) */
 /* ------------------------------------------------------------------ */
 
-type Category = "Database" | "Filesystem" | "Execution" | "Knowledge";
+type Category = "Database" | "Filesystem" | "Execution" | "Knowledge" | "Gateway";
 
 interface ToolCard {
   name: string; // exact tool name from the registry
@@ -77,6 +81,38 @@ const TOOLS: ToolCard[] = [
     icon: BookOpen,
     category: "Knowledge",
   },
+  {
+    name: "web_search",
+    title: "Web Search",
+    description:
+      "Search the live internet (Tavily/Exa via 9Router). Use for news, research, current events, and any data beyond the model's knowledge.",
+    icon: Newspaper,
+    category: "Gateway",
+  },
+  {
+    name: "web_fetch",
+    title: "Web Fetch",
+    description:
+      "Read the full content of a URL as markdown (Firecrawl/Jina via 9Router). Usually follows web_search to read a result in depth.",
+    icon: Globe,
+    category: "Gateway",
+  },
+  {
+    name: "generate_image",
+    title: "Image Generation",
+    description:
+      "Generate images from a text prompt (Gemini/FLUX via 9Router). Saved as PNG artifacts, previewable in the Studio.",
+    icon: Image,
+    category: "Gateway",
+  },
+  {
+    name: "text_to_speech",
+    title: "Text to Speech",
+    description:
+      "Convert text to spoken audio (Minimax/ElevenLabs via 9Router). Saved as MP3 artifacts — voiceovers and narration.",
+    icon: Mic,
+    category: "Gateway",
+  },
 ];
 
 const CATEGORIES: ("All" | Category)[] = [
@@ -85,6 +121,7 @@ const CATEGORIES: ("All" | Category)[] = [
   "Filesystem",
   "Execution",
   "Knowledge",
+  "Gateway",
 ];
 
 /* Mock telemetry — clearly illustrative, not live measurements. */
@@ -99,7 +136,7 @@ const STATS: {
 }[] = [
   {
     label: "Tools Online",
-    value: "6 / 6",
+    value: "10 / 10",
     sub: "100% Ready",
     subClass: "text-signal",
     barClass: "bg-signal",

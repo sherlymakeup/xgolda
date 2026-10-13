@@ -5,7 +5,7 @@ import path from "node:path";
 import { ARTIFACTS_DIR, ensureArtifactsDir } from "../security/path-jail.ts";
 import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg, num } from "./types.ts";
-import { env } from "../env.ts";
+import { getConfig } from "../config.ts";
 import { classifyCommand } from "./terminal-guard.ts";
 import { requestApproval } from "../agent/approval.ts";
 
@@ -165,9 +165,11 @@ async function terminalExec(
     }
   }
 
+  const cfg = await getConfig();
+  const execTimeout = num(cfg.values.EXECUTION_TIMEOUT_MS, 15000);
   const timeoutMs = Math.min(
-    Math.max(num(args.timeoutMs, env.executionTimeoutMs), 1000),
-    Math.max(env.executionTimeoutMs, 60000)
+    Math.max(num(args.timeoutMs, execTimeout), 1000),
+    Math.max(execTimeout, 60000)
   );
 
   // cwd default = workspace artifacts agen; boleh dioverride (tanpa jail,

@@ -61,6 +61,13 @@ export const toolExecutions = sqliteTable("tool_executions", {
   createdAt: integer("created_at").notNull(),
 });
 
+/** Override konfigurasi dari UI (halaman Update Config) — mengalahkan nilai .env. */
+export const appConfig = sqliteTable("app_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 /** Berkas kode TSX/TS/Python yang ditulis agen ke ./storage/artifacts/. */
 export const artifacts = sqliteTable("artifacts", {
   id: text("id").primaryKey(),

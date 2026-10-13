@@ -1,4 +1,5 @@
 import { env } from "../env.ts";
+import { getConfig, num } from "../config.ts";
 import { stripProviderNames } from "../security/sanitization.ts";
 import { ThinkStreamParser } from "./parser.ts";
 import { withRetry } from "./retry.ts";
@@ -67,7 +68,8 @@ export async function streamChat(
     onEvent: (e: StreamEvent) => void | Promise<void>;
   }
 ): Promise<{ reasoning: string; content: string }> {
-  const model = opts.model || env.defaultModel;
+  const cfg = await getConfig();
+  const model = opts.model || cfg.values.DEFAULT_MODEL;
   const temperature = opts.temperature ?? 0.7;
   const think = new ThinkStreamParser();
   let reasoning = "";
@@ -77,7 +79,7 @@ export async function streamChat(
   // error tidak di-retry agar delta tidak duplikat.
   const res = await withRetry(
     async () => {
-      const r = await fetch(`${env.inferenceEndpoint}/chat/completions`, {
+      const r = await fetch(`${cfg.values.INTERNAL_INFERENCE_ENDPOINT}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,8 +99,8 @@ export async function streamChat(
       return r;
     },
     {
-      attempts: env.aiRetryAttempts,
-      baseMs: env.aiRetryBaseMs,
+      attempts: num(cfg.values.AI_RETRY_ATTEMPTS, 3),
+      baseMs: num(cfg.values.AI_RETRY_BASE_MS, 1000),
       signal: opts.signal,
     }
   );
@@ -180,13 +182,14 @@ export async function chatOnce(
   messages: ChatMessage[],
   opts: { model?: string; temperature?: number; signal?: AbortSignal } = {}
 ): Promise<{ reasoning: string; content: string }> {
-  const model = opts.model || env.defaultModel;
+  const cfg = await getConfig();
+  const model = opts.model || cfg.values.DEFAULT_MODEL;
   const temperature = opts.temperature ?? 0.7;
 
   // Idempoten — aman di-retry penuh
   const json: any = await withRetry(
     async () => {
-      const res = await fetch(`${env.inferenceEndpoint}/chat/completions`, {
+      const res = await fetch(`${cfg.values.INTERNAL_INFERENCE_ENDPOINT}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -205,8 +208,8 @@ export async function chatOnce(
       return res.json();
     },
     {
-      attempts: env.aiRetryAttempts,
-      baseMs: env.aiRetryBaseMs,
+      attempts: num(cfg.values.AI_RETRY_ATTEMPTS, 3),
+      baseMs: num(cfg.values.AI_RETRY_BASE_MS, 1000),
       signal: opts.signal,
     }
   );
@@ -228,15 +231,20 @@ export async function chatOnce(
 
 /** Embedding tunggal untuk vector search lokal. */
 export async function getEmbedding(text: string): Promise<number[]> {
+  const cfg = await getConfig();
+  // EMBEDDING_ENDPOINT tetap didukung sebagai override khusus (env-only)
+  const embEndpoint =
+    (process.env.EMBEDDING_ENDPOINT || "").replace(/\/+$/, "") ||
+    cfg.values.INTERNAL_INFERENCE_ENDPOINT;
   const json: any = await withRetry(
     async () => {
-      const res = await fetch(`${env.embeddingEndpoint}/embeddings`, {
+      const res = await fetch(`${embEndpoint}/embeddings`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${env.gatewayToken()}`,
         },
-        body: JSON.stringify({ model: env.embeddingModel, input: text }),
+        body: JSON.stringify({ model: cfg.values.EMBEDDING_MODEL, input: text }),
         signal: gatewaySignal(),
       });
       if (!res.ok) {
@@ -244,7 +252,10 @@ export async function getEmbedding(text: string): Promise<number[]> {
       }
       return res.json();
     },
-    { attempts: env.aiRetryAttempts, baseMs: env.aiRetryBaseMs }
+    {
+      attempts: num(cfg.values.AI_RETRY_ATTEMPTS, 3),
+      baseMs: num(cfg.values.AI_RETRY_BASE_MS, 1000),
+    }
   );
   const vec = json?.data?.[0]?.embedding;
   if (!Array.isArray(vec)) throw new GatewayError("Embedding: format tak dikenal");

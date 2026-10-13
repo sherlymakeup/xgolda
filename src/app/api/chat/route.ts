@@ -5,7 +5,7 @@ import { getDb } from "@/db";
 import { messages, sessions } from "@/db/schema";
 import { streamChat } from "@/lib/ai/client";
 import { buildChatContext } from "@/lib/agent/context";
-import { env } from "@/lib/env";
+import { getConfig } from "@/lib/config";
 import { toGatewayError } from "@/lib/security/sanitization";
 
 export const runtime = "nodejs";
@@ -53,10 +53,11 @@ export async function POST(req: NextRequest) {
   }
   if (!sessionId) {
     sessionId = nanoid();
+    const cfg = await getConfig();
     await db.insert(sessions).values({
       id: sessionId,
       title: userText.slice(0, 60) || "Percakapan baru",
-      model: body.model || env.defaultModel,
+      model: body.model || cfg.values.DEFAULT_MODEL,
       temperature: body.temperature ?? 0.7,
       createdAt: now,
       updatedAt: now,

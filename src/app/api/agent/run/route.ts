@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { agentRuns, messages } from "@/db/schema";
 import { runAgentLoop } from "@/lib/agent/engine";
-import { env } from "@/lib/env";
+import { getConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const runId = nanoid();
   const now = Date.now();
+  const cfg = await getConfig();
   await db.insert(agentRuns).values({
     id: runId,
     sessionId: body.sessionId,
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
     runId,
     goal,
     sessionId: body.sessionId,
-    model: body.model || env.defaultModel,
+    model: body.model || cfg.values.DEFAULT_MODEL,
   }).catch((e) => {
     console.error(
       "[agent/run] loop gagal:",

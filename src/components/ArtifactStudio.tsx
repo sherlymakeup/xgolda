@@ -1,6 +1,15 @@
 "use client";
 
-import { Code2, Eye, FileCode2, Loader2, Play, X } from "lucide-react";
+import {
+  Code2,
+  Eye,
+  FileAudio,
+  FileCode2,
+  Image as ImageIcon,
+  Loader2,
+  Play,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   compileArtifact,
@@ -12,6 +21,19 @@ import {
 interface Props {
   onClose: () => void;
   refreshKey: number;
+}
+
+type MediaKind = "image" | "audio" | null;
+
+const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "m4a"]);
+
+/** Deteksi jenis media dari ekstensi filename. */
+function mediaKind(filename: string): MediaKind {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (IMAGE_EXT.has(ext)) return "image";
+  if (AUDIO_EXT.has(ext)) return "audio";
+  return null;
 }
 
 /** Bangun srcDoc iframe: import blob dari kode ESM hasil compile + React via esm.sh. */
@@ -81,6 +103,14 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
     setSelectedId(id);
     setPreviewDoc(null);
     setCompileError("");
+    const meta = list.find((a) => a.id === id);
+    const fname = meta?.filename ?? "";
+    setFilename(fname);
+    // File media tidak perlu dimuat sebagai teks (biner) — langsung preview mentah
+    if (mediaKind(fname)) {
+      setSource("");
+      return;
+    }
     try {
       const a = await getArtifact(id);
       setSource(a.sourceCode);
@@ -108,6 +138,9 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
     }
   };
 
+  const kind = mediaKind(filename);
+  const rawUrl = selectedId ? `/api/artifacts/${selectedId}/raw` : "";
+
   return (
     <aside className="h-full w-full md:w-[420px] shrink-0 border-l border-line-hair bg-obsidian-950 flex flex-col">
       <div className="flex items-center gap-2 px-4 py-3.5 border-b border-line-hair">
@@ -133,21 +166,26 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
               Minta agen membuatkan kode — file tersimpan otomatis di sini.
             </p>
           )}
-          {list.map((a) => (
-            <button
-              key={a.id}
-              onClick={() => open(a.id)}
-              className="w-full flex items-center gap-2.5 rounded-xl border border-line-hair bg-obsidian-900 hover:border-line-soft px-3 py-2.5 text-left transition-colors"
-            >
-              <Code2 size={14} className="text-ink-mute shrink-0" />
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm text-ink truncate">{a.filename}</span>
-                <span className="block font-mono text-[10px] text-ink-faint">
-                  {a.language} · {new Date(a.updatedAt).toLocaleString("id-ID")}
+          {list.map((a) => {
+            const kind = mediaKind(a.filename);
+            const ListIcon =
+              kind === "image" ? ImageIcon : kind === "audio" ? FileAudio : Code2;
+            return (
+              <button
+                key={a.id}
+                onClick={() => open(a.id)}
+                className="w-full flex items-center gap-2.5 rounded-xl border border-line-hair bg-obsidian-900 hover:border-line-soft px-3 py-2.5 text-left transition-colors"
+              >
+                <ListIcon size={14} className="text-ink-mute shrink-0" />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm text-ink truncate">{a.filename}</span>
+                  <span className="block font-mono text-[10px] text-ink-faint">
+                    {a.language} · {new Date(a.updatedAt).toLocaleString("id-ID")}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="flex-1 flex flex-col min-h-0">
@@ -162,42 +200,67 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
               ← Kembali
             </button>
             <span className="text-sm text-ink truncate flex-1">{filename}</span>
-            <button
-              onClick={runPreview}
-              disabled={compiling}
-              className="flex items-center gap-1.5 rounded-full bg-ink text-void text-xs font-medium px-3 py-1.5 hover:bg-[#e4e4e7] disabled:opacity-40 transition-all"
-            >
-              {compiling ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Play size={13} />
-              )}
-              Preview
-            </button>
+            {!kind && (
+              <button
+                onClick={runPreview}
+                disabled={compiling}
+                className="flex items-center gap-1.5 rounded-full bg-ink text-void text-xs font-medium px-3 py-1.5 hover:bg-[#e4e4e7] disabled:opacity-40 transition-all"
+              >
+                {compiling ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Play size={13} />
+                )}
+                Preview
+              </button>
+            )}
           </div>
 
-          {compileError && (
-            <p className="mx-3 mt-2 text-[11px] font-mono text-red-400 whitespace-pre-wrap">
-              {compileError}
-            </p>
-          )}
-
-          {previewDoc ? (
-            <div className="flex-1 flex flex-col min-h-0">
-              <p className="px-3 py-1.5 font-mono text-[10px] tracking-widest text-ink-faint border-b border-line-hair flex items-center gap-1.5">
-                <Eye size={11} /> LIVE PREVIEW
-              </p>
-              <iframe
-                title="preview"
-                srcDoc={previewDoc}
-                sandbox="allow-scripts"
-                className="flex-1 w-full bg-obsidian-900 min-h-[280px]"
+          {kind === "image" ? (
+            <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-void min-h-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={rawUrl}
+                alt={filename}
+                className="max-h-full max-w-full object-contain rounded-xl border border-line-hair"
               />
             </div>
+          ) : kind === "audio" ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 min-h-0">
+              <div className="w-16 h-16 rounded-2xl bg-obsidian-800 border border-line-soft flex items-center justify-center">
+                <FileAudio size={26} className="text-signal" />
+              </div>
+              <p className="text-sm text-ink-mute font-mono truncate max-w-full">
+                {filename}
+              </p>
+              <audio controls src={rawUrl} className="w-full max-w-sm" />
+            </div>
           ) : (
-            <pre className="flex-1 overflow-auto p-3.5 font-mono text-[12px] leading-relaxed text-ink-dim whitespace-pre-wrap break-words">
-              {source}
-            </pre>
+            <>
+              {compileError && (
+                <p className="mx-3 mt-2 text-[11px] font-mono text-red-400 whitespace-pre-wrap">
+                  {compileError}
+                </p>
+              )}
+
+              {previewDoc ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <p className="px-3 py-1.5 font-mono text-[10px] tracking-widest text-ink-faint border-b border-line-hair flex items-center gap-1.5">
+                    <Eye size={11} /> LIVE PREVIEW
+                  </p>
+                  <iframe
+                    title="preview"
+                    srcDoc={previewDoc}
+                    sandbox="allow-scripts"
+                    className="flex-1 w-full bg-obsidian-900 min-h-[280px]"
+                  />
+                </div>
+              ) : (
+                <pre className="flex-1 overflow-auto p-3.5 font-mono text-[12px] leading-relaxed text-ink-dim whitespace-pre-wrap break-words">
+                  {source}
+                </pre>
+              )}
+            </>
           )}
         </div>
       )}

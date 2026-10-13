@@ -12,6 +12,7 @@ import SuggestionCards from "@/components/home/SuggestionCards";
 import TelemetryPanel from "@/components/telemetry/TelemetryPanel";
 import AgentHub from "@/components/hub/AgentHub";
 import SettingsPage from "@/components/settings/SettingsPage";
+import ConfigPage from "@/components/config/ConfigPage";
 import { looksLikeTask } from "@/lib/intent";
 import {
   deleteSession,
@@ -290,7 +291,9 @@ export default function Home() {
               ? "AGENT HUB & MCP"
               : view === "settings"
                 ? "SETTINGS"
-                : "AGENTIC WORKSPACE"}
+                : view === "config"
+                  ? "UPDATE CONFIG"
+                  : "AGENTIC WORKSPACE"}
           </span>
           <button
             onClick={() => {
@@ -317,6 +320,10 @@ export default function Home() {
         ) : view === "settings" ? (
           <div className="flex-1 overflow-y-auto">
             <SettingsPage model={defaultModel} endpoint={endpoint} />
+          </div>
+        ) : view === "config" ? (
+          <div className="flex-1 overflow-y-auto">
+            <ConfigPage />
           </div>
         ) : (
           <>

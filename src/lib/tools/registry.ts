@@ -1,7 +1,11 @@
 import { fsListTool, fsReadTool, fsWriteTool } from "./fs-operations.ts";
+import { imageGenTool } from "./image-gen.ts";
 import { skillReadTool } from "./skill-read.ts";
 import { sqliteQueryTool } from "./sqlite-query.ts";
 import { terminalExecTool } from "./terminal.ts";
+import { ttsTool } from "./tts.ts";
+import { webFetchTool } from "./web-fetch.ts";
+import { webSearchTool } from "./web-search.ts";
 import type { ToolDefinition, ToolHandler } from "./types.ts";
 
 /** Semua tool yang tersedia untuk agen. */
@@ -12,6 +16,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   fsListTool,
   terminalExecTool,
   skillReadTool,
+  webSearchTool,
+  webFetchTool,
+  imageGenTool,
+  ttsTool,
 ];
 
 export const TOOL_MAP: Record<string, ToolHandler> = Object.fromEntries(

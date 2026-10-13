@@ -6,12 +6,13 @@ import {
   MessagesSquare,
   Network,
   Settings,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
 import type { Session } from "@/lib/client-api";
 
-export type View = "workspace" | "hub" | "settings";
+export type View = "workspace" | "hub" | "settings" | "config";
 
 interface Props {
   sessions: Session[];
@@ -32,6 +33,7 @@ const NAV: { id: View | "studio"; label: string; icon: typeof MessagesSquare }[]
   { id: "hub", label: "Agent Hub & MCP", icon: Network },
   { id: "studio", label: "Artifacts & Studio", icon: FileCode2 },
   { id: "settings", label: "Settings", icon: Settings },
+  { id: "config", label: "Update Config", icon: SlidersHorizontal },
 ];
 
 export default function Sidebar({
