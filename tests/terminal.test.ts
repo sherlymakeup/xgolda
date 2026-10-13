@@ -30,9 +30,18 @@ describe("terminal_exec", () => {
     assert.match(r.output, /wajib diisi/);
   });
 
-  it("cwd tidak ada ditolak", async () => {
+  it("cwd absolut di luar workspace ditolak (jail)", async () => {
     const r = await terminalExecTool.handler(
       { command: "echo x", cwd: "/jalan/yang/tidak/ada/xyz123" },
+      {}
+    );
+    assert.equal(r.ok, false);
+    assert.match(r.output, /ACCESS_DENIED/);
+  });
+
+  it("cwd relatif yang tidak ada tetap ditolak", async () => {
+    const r = await terminalExecTool.handler(
+      { command: "echo x", cwd: "tidak-ada-xyz123" },
       {}
     );
     assert.equal(r.ok, false);

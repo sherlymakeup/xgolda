@@ -14,6 +14,7 @@ import { TOOL_MAP, getToolManifest, hasTool } from "../tools/registry.ts";
 import { getSkillCatalogText } from "../skills/loader.ts";
 import { generatePlan } from "./planner.ts";
 import { summarizeToolHistory } from "./context.ts";
+import { getSessionWorkspace } from "./workspace.ts";
 
 export interface AgentRunOptions {
   runId: string;
@@ -85,9 +86,17 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     await setStatus("running", { planTreeJson, currentStep: 0 });
 
     // --- EXECUTE LOOP ---
+    // Folder kerja sesi (di-jail) — diberitahukan ke model via system prompt
+    let workspaceDir = "";
+    try {
+      if (opts.sessionId) workspaceDir = await getSessionWorkspace(opts.sessionId);
+    } catch {
+      /* fallback: prompt pakai teks generik */
+    }
     const systemPrompt = buildAgentSystemPrompt(
       getToolManifest(),
-      getSkillCatalogText()
+      getSkillCatalogText(),
+      workspaceDir
     );
     const history: {
       toolName: string;

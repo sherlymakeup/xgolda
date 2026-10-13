@@ -1,23 +1,55 @@
 import fs from "node:fs";
+import path from "node:path";
 import {
   ARTIFACTS_DIR,
   assertSafePath,
   ensureArtifactsDir,
 } from "../security/path-jail.ts";
-import type { ToolDefinition, ToolResult } from "./types.ts";
+import {
+  assertWorkspacePath,
+  getSessionWorkspace,
+} from "../agent/workspace.ts";
+import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg } from "./types.ts";
 
-async function fsWrite(args: Record<string, unknown>): Promise<ToolResult> {
+/**
+ * Tentukan base dir tool file:
+ * - Bila ada ctx.sessionId → folder workspace sesi itu (di-jail).
+ * - Fallback (tanpa sesi) → ./storage/artifacts/ seperti dulu.
+ */
+async function resolveBase(ctx: ToolContext): Promise<{
+  dir: string;
+  jail: (filename: string) => Promise<string>;
+  label: string;
+}> {
+  if (ctx.sessionId) {
+    const sid = ctx.sessionId;
+    const dir = await getSessionWorkspace(sid);
+    return {
+      dir,
+      jail: (f) => assertWorkspacePath(sid, f),
+      label: "workspace sesi",
+    };
+  }
+  ensureArtifactsDir();
+  return { dir: ARTIFACTS_DIR, jail: async (f) => assertSafePath(f), label: "artifacts" };
+}
+
+async function fsWrite(
+  args: Record<string, unknown>,
+  ctx: ToolContext
+): Promise<ToolResult> {
   const filename = arg(args.filename);
   const content = arg(args.content);
   if (!filename) return { ok: false, output: "ERROR: 'filename' wajib diisi" };
   try {
-    ensureArtifactsDir();
-    const target = assertSafePath(filename);
+    const { jail, label } = await resolveBase(ctx);
+    const target = await jail(filename);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, "utf8");
     return {
       ok: true,
-      output: `OK: tertulis ${content.length} karakter ke ${filename}`,
+      output: `OK: tertulis ${content.length} karakter ke ${target}`,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -25,11 +57,15 @@ async function fsWrite(args: Record<string, unknown>): Promise<ToolResult> {
   }
 }
 
-async function fsRead(args: Record<string, unknown>): Promise<ToolResult> {
+async function fsRead(
+  args: Record<string, unknown>,
+  ctx: ToolContext
+): Promise<ToolResult> {
   const filename = arg(args.filename);
   if (!filename) return { ok: false, output: "ERROR: 'filename' wajib diisi" };
   try {
-    const target = assertSafePath(filename);
+    const { jail } = await resolveBase(ctx);
+    const target = await jail(filename);
     if (!fs.existsSync(target)) {
       return { ok: false, output: `ERROR: file '${filename}' tidak ditemukan` };
     }
@@ -48,17 +84,25 @@ async function fsRead(args: Record<string, unknown>): Promise<ToolResult> {
   }
 }
 
-async function fsList(): Promise<ToolResult> {
+async function fsList(ctx: ToolContext): Promise<ToolResult> {
   try {
-    ensureArtifactsDir();
-    const files = fs
-      .readdirSync(ARTIFACTS_DIR, { withFileTypes: true })
-      .filter((d) => d.isFile())
+    const { dir, label } = await resolveBase(ctx);
+    const entries = fs
+      .readdirSync(dir, { withFileTypes: true })
       .map((d) => {
-        const st = fs.statSync(`${ARTIFACTS_DIR}/${d.name}`);
-        return { name: d.name, size: st.size };
+        const full = path.join(dir, d.name);
+        let size = 0;
+        try {
+          size = d.isFile() ? fs.statSync(full).size : 0;
+        } catch {
+          /* abaikan */
+        }
+        return { name: d.name + (d.isDirectory() ? "/" : ""), size };
       });
-    return { ok: true, output: JSON.stringify(files, null, 2) };
+    return {
+      ok: true,
+      output: `Folder ${label} (${dir}):\n` + JSON.stringify(entries, null, 2),
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, output: `ERROR: ${msg}` };
@@ -68,26 +112,26 @@ async function fsList(): Promise<ToolResult> {
 export const fsWriteTool: ToolDefinition = {
   name: "fs_write_artifact",
   description:
-    "Tulis file teks ke ./storage/artifacts/ (di-jail, anti path traversal).",
+    "Tulis file teks ke folder kerja sesi ini (boleh pakai subdir, mis. 'laporan/hasil.md'). Di-jail: tidak bisa keluar dari folder sesi.",
   parameters: {
-    filename: { type: "string", description: "Nama file, mis. app.tsx", required: true },
+    filename: { type: "string", description: "Nama file relatif, mis. app.tsx", required: true },
     content: { type: "string", description: "Isi file", required: true },
   },
-  handler: async (args) => fsWrite(args),
+  handler: async (args, ctx) => fsWrite(args, ctx),
 };
 
 export const fsReadTool: ToolDefinition = {
   name: "fs_read_artifact",
-  description: "Baca file teks dari ./storage/artifacts/ (maks 20.000 karakter).",
+  description: "Baca file teks dari folder kerja sesi ini (maks 20.000 karakter).",
   parameters: {
-    filename: { type: "string", description: "Nama file", required: true },
+    filename: { type: "string", description: "Nama file relatif", required: true },
   },
-  handler: async (args) => fsRead(args),
+  handler: async (args, ctx) => fsRead(args, ctx),
 };
 
 export const fsListTool: ToolDefinition = {
   name: "fs_list_artifacts",
-  description: "Daftar semua file di ./storage/artifacts/.",
+  description: "Daftar file & folder di folder kerja sesi ini.",
   parameters: {},
-  handler: async () => fsList(),
+  handler: async (_args, ctx) => fsList(ctx),
 };

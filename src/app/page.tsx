@@ -70,14 +70,28 @@ export default function Home() {
 
   useEffect(() => {
     refreshSessions();
+    // Thread isolation: buka ?thread=<id> langsung masuk thread itu
+    const tid = new URLSearchParams(window.location.search).get("thread");
+    if (tid) loadSession(tid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshSessions]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, streamMsg, runs]);
 
+  /** Sinkron URL ?thread=<id> dua arah (bookmarkable, refresh tidak nyasar). */
+  const syncThreadUrl = (id?: string) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("thread", id);
+    else url.searchParams.delete("thread");
+    window.history.replaceState(null, "", url.toString());
+  };
+
   const loadSession = async (id: string) => {
     try {
+      abortRef.current?.abort(); // ganti thread = hentikan stream yang jalan
       const { messages } = await getSession(id);
       setActiveId(id);
       setMessages(messages);
@@ -85,12 +99,14 @@ export default function Home() {
       setError("");
       setView("workspace");
       setSidebarOpen(false);
+      syncThreadUrl(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
   const newChat = () => {
+    abortRef.current?.abort();
     setActiveId(undefined);
     setMessages([]);
     setRuns([]);
@@ -98,6 +114,7 @@ export default function Home() {
     setError("");
     setView("workspace");
     setSidebarOpen(false);
+    syncThreadUrl(undefined);
   };
 
   const navigate = (v: View) => {
@@ -144,6 +161,7 @@ export default function Home() {
           setActiveId(sid);
           refreshSessions();
         }
+        syncThreadUrl(sid);
         const { runId } = await startAgentRun(goal, sid, opts.model, text);
         setRuns((r) => [...r, { runId, goal: text }]);
         // Tampilkan pesan user langsung; jawaban final dimuat ulang saat run selesai
@@ -201,6 +219,7 @@ export default function Home() {
           if (e.type === "session") {
             finalSessionId = e.sessionId;
             setActiveId(e.sessionId);
+            syncThreadUrl(e.sessionId);
           } else if (e.type === "reasoning") {
             acc.reasoning += e.delta;
             setStreamMsg({ ...acc });

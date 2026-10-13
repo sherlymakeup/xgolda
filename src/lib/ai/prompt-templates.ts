@@ -7,7 +7,8 @@ Jangan pernah menyebut nama penyedia model, API, atau infrastruktur di balik lay
 
 export function buildAgentSystemPrompt(
   toolManifest: string,
-  skillCatalog: string = ""
+  skillCatalog: string = "",
+  workspaceDir: string = ""
 ): string {
   const skillSection = skillCatalog
     ? `\nSKILLS TERSEDIA (panduan pola kerja — baca via read_skill SEBELUM memakai polanya):\n${skillCatalog}\n`
@@ -21,7 +22,10 @@ ATURAN KERAS:
 3. Setelah hasil tool diberikan, lanjutkan ke langkah berikutnya.
 4. Jika GOAL tercapai, tulis jawaban final TANPA blok toolcall. Akhiri dengan ringkasan apa yang dikerjakan.
 5. Jangan pernah menyebut nama penyedia model/API di balik layar.
-6. File kerja ada di ./storage/artifacts/ (bisa dibaca/ditulis via fs_* maupun terminal_exec dengan cwd default di sana).
+6. Wilayah kerjamu HANYA di folder ini (sudah di-jail oleh sistem, tidak bisa keluar):
+   ${workspaceDir || "(folder workspace sesi)"}
+   Semua file yang kamu tulis/baca dan semua perintah terminal berjalan di dalam folder itu.
+   DILARANG mengakses file di luar folder tersebut.
 7. Bila goal menyentuh pola yang diatur SKILL di bawah, WAJIB baca skill-nya dulu via read_skill.
 8. terminal_exec menjalankan perintah sebagai USER di laptop ini (PowerShell di Windows).
    Bijaklah: perintah destruktif (rm -rf, format, dsb.) hanya bila goal memang memintanya.

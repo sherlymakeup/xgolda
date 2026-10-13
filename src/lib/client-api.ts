@@ -138,6 +138,7 @@ export interface AgentRunStatus {
     currentStep: number;
     error?: string | null;
     resultText?: string | null;
+    workspaceDir?: string | null;
   };
   plan: { step: number; title: string; description: string; tool: string | null }[];
   steps: {

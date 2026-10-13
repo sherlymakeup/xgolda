@@ -22,6 +22,7 @@ export const EDITABLE_CONFIG_KEYS = [
   "IMAGE_MODEL",
   "TTS_MODEL",
   "AGENT_MAX_STEPS",
+  "AGENT_WORKSPACE_ROOT",
   "EXECUTION_TIMEOUT_MS",
   "APPROVAL_TIMEOUT_MS",
   "AI_RETRY_ATTEMPTS",
@@ -39,6 +40,10 @@ const DEFAULTS: Record<ConfigKey, string> = {
   IMAGE_MODEL: "gemini/gemini-3-pro-image-preview",
   TTS_MODEL: "minimax/speech-2.8-turbo",
   AGENT_MAX_STEPS: "12",
+  AGENT_WORKSPACE_ROOT:
+    process.platform === "win32"
+      ? "C:\\Users\\dirga\\Documents\\Workspace"
+      : "storage/agent-workspace",
   EXECUTION_TIMEOUT_MS: "15000",
   APPROVAL_TIMEOUT_MS: "300000",
   AI_RETRY_ATTEMPTS: "3",
@@ -62,6 +67,7 @@ function envMap(): Record<ConfigKey, string | undefined> {
     IMAGE_MODEL: process.env.IMAGE_MODEL,
     TTS_MODEL: process.env.TTS_MODEL,
     AGENT_MAX_STEPS: process.env.AGENT_MAX_STEPS,
+    AGENT_WORKSPACE_ROOT: process.env.AGENT_WORKSPACE_ROOT,
     EXECUTION_TIMEOUT_MS: process.env.EXECUTION_TIMEOUT_MS,
     APPROVAL_TIMEOUT_MS: process.env.APPROVAL_TIMEOUT_MS,
     AI_RETRY_ATTEMPTS: process.env.AI_RETRY_ATTEMPTS,

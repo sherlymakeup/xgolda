@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { agentRuns, approvals, toolExecutions } from "@/db/schema";
+import { getSessionWorkspace } from "@/lib/agent/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,12 @@ export async function GET(
     return Response.json({ error: "Run tidak ditemukan" }, { status: 404 });
   }
   const run = runs[0];
+  let workspaceDir: string | null = null;
+  try {
+    if (run.sessionId) workspaceDir = await getSessionWorkspace(run.sessionId);
+  } catch {
+    /* abaikan */
+  }
   const steps = await db
     .select()
     .from(toolExecutions)
@@ -51,6 +58,7 @@ export async function GET(
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
       finishedAt: run.finishedAt,
+      workspaceDir,
     },
     plan,
     steps: steps.map((s) => ({

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  FolderGit2,
   Loader2,
   Play,
   ShieldAlert,
@@ -85,6 +86,15 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
               : ""}
           </p>
           <p className="text-sm text-ink-mute truncate mt-0.5">{goal}</p>
+          {status?.run.workspaceDir && (
+            <p
+              className="font-mono text-[10px] text-ink-faint truncate mt-0.5 flex items-center gap-1"
+              title={status.run.workspaceDir}
+            >
+              <FolderGit2 size={11} className="shrink-0" />
+              {status.run.workspaceDir}
+            </p>
+          )}
         </div>
         {!done ? (
           <Loader2 size={15} className="text-signal animate-spin shrink-0" />

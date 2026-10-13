@@ -49,6 +49,7 @@ const SECTIONS: SectionDef[] = [
     blurb: "Batas loop otonom & safety gate.",
     rows: [
       { key: "AGENT_MAX_STEPS", label: "Max Steps per Run", hint: "Batas iterasi plan → execute → evaluate." },
+      { key: "AGENT_WORKSPACE_ROOT", label: "Agent Workspace Root", hint: "Folder kerja agen per thread: <root>/<thread-id>/. Agen di-jail di dalamnya." },
       { key: "EXECUTION_TIMEOUT_MS", label: "Execution Timeout (ms)", hint: "terminal_exec dibunuh otomatis melewati batas ini." },
       { key: "APPROVAL_TIMEOUT_MS", label: "Approval Timeout (ms)", hint: "Perintah berbahaya kedaluwarsa tanpa keputusan." },
     ],

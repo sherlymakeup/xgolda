@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ARTIFACTS_DIR, ensureArtifactsDir } from "../security/path-jail.ts";
+import { getSessionWorkspace, isInside } from "../agent/workspace.ts";
 import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg, num } from "./types.ts";
 import { getConfig } from "../config.ts";
@@ -14,9 +15,11 @@ const MAX_OUTPUT = 20000;
 /**
  * terminal_exec — akses shell penuh untuk agen (pengganti sandbox_run).
  *
- * THREAT MODEL (keputusan user 2026-10-13): terminal laptop = sandbox.
- * Agen boleh menjalankan perintah apa pun sebagai user. TIDAK ada
- * pattern-guard (teater melawan shell beneran) dan TIDAK ada jail cwd.
+ * THREAT MODEL (keputusan user 2026-10-13, diperketat 2026-10-13):
+ * terminal laptop = sandbox perintah, TAPI working directory di-jail ke
+ * folder workspace sesi (<AGENT_WORKSPACE_ROOT>/<sessionId>/).
+ * Agen boleh menjalankan perintah apa pun sebagai user, namun TIDAK bisa
+ * keluar dari folder sesinya (cwd absolute ke luar ditolak).
  *
  * Yang tetap dijaga:
  * - timeout + kill paksa (Windows: taskkill /T agar child ikut mati)
@@ -172,13 +175,16 @@ async function terminalExec(
     Math.max(execTimeout, 60000)
   );
 
-  // cwd default = workspace artifacts agen; boleh dioverride (tanpa jail,
-  // sesuai threat model "terminal = sandbox")
-  ensureArtifactsDir();
-  const rawCwd = arg(args.cwd, ARTIFACTS_DIR);
-  const cwd = path.isAbsolute(rawCwd)
-    ? path.normalize(rawCwd)
-    : path.resolve(process.cwd(), rawCwd);
+  // cwd di-jail ke folder workspace sesi: default = folder sesi,
+  // override hanya boleh relatif di dalamnya (absolute ke luar ditolak).
+  const base = ctx.sessionId
+    ? await getSessionWorkspace(ctx.sessionId)
+    : ensureArtifactsDir();
+  const rawCwd = arg(args.cwd, "");
+  const cwd = rawCwd ? path.resolve(base, rawCwd) : base;
+  if (!isInside(base, cwd)) {
+    return { ok: false, output: "ERROR: ACCESS_DENIED: cwd di luar folder workspace sesi" };
+  }
   if (!fs.existsSync(cwd)) {
     return { ok: false, output: `ERROR: cwd tidak ada: ${cwd}` };
   }
@@ -211,8 +217,9 @@ export const terminalExecTool: ToolDefinition = {
   name: "terminal_exec",
   description:
     "Jalankan perintah shell penuh (PowerShell di Windows, bash di Linux/macOS) dengan timeout & kill otomatis. " +
+    "Berjalan di folder kerja sesi ini (di-jail, tidak bisa keluar). " +
     "Perintah BERBAHAYA (hapus massal, format, shutdown, ubah registry, pipe kode remote) butuh persetujuan user dulu via approval gate. " +
-    "Untuk coding, build, install, git, dan verifikasi. Berjalan sebagai user — perlakukan terminal sebagai sandbox.",
+    "Untuk coding, build, install, git, dan verifikasi. Berjalan sebagai user.",
   parameters: {
     command: {
       type: "string",
@@ -221,7 +228,7 @@ export const terminalExecTool: ToolDefinition = {
     },
     cwd: {
       type: "string",
-      description: "Working directory (default: ./storage/artifacts/)",
+      description: "Subfolder relatif di dalam folder kerja sesi (default: folder sesi itu sendiri)",
     },
     timeoutMs: {
       type: "number",

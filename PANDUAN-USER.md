@@ -88,8 +88,20 @@ Ganti model? Tinggal ubah `DEFAULT_MODEL` — atau klik pill nama model di Omnib
 
 ## 4. Cara Pakai Singkat
 
+### Thread (per-chat isolated)
+Tiap chat adalah **thread terpisah** — kayak side chat: konteks tidak bocor antar thread, riwayat tersimpan persisten di database (tidak ada data di localStorage). URL-nya bookmarkable: `http://127.0.0.1:3000/?thread=<id>`. Pindah thread otomatis menghentikan streaming yang sedang jalan.
+
+### Folder kerja agen (di-jail per thread)
+Agen **hanya boleh kerja** di folder khusus per thread:
+
+```
+C:\Users\dirga\Documents\Workspace\<thread-id>\
+```
+
+Semua file yang ditulis agen (`fs_write`), dibaca, dan semua perintah `terminal_exec` berjalan di dalam folder itu — **tidak bisa keluar** (path `..` maupun absolute ke luar ditolak sistem). Folder thread-nya tampil di panel Agent ("working dir"). Root folder bisa diubah di halaman **Update Config** (`AGENT_WORKSPACE_ROOT`).
+
 ### Chat biasa
-Ketik di **Omnibox** (kolom input bawah), Enter buat kirim. Kalau model-nya reasoning (kayak DeepSeek-R1), proses berpikirnya muncul di accordion **THOUGHT PROCESS** — bisa dibuka-tutup, ada timer-nya.
+Ketik di **Omnibox** (kolom input bawah), Enter buat kirim. Kalau model-nya reasoning (kayak DeepSeek-R1), proses berpikirnya muncul di accordion **THOUGHT PROCESS** — bisa dibuka-tutup, ada timer-nya. Klik ikon **paperclip** buat lampirkan gambar (vision) — model yang support vision bisa "melihat" gambarnya. Klik **pil model** buat ganti model dari daftar asli gateway (searchable).
 
 ### Mode Agent (toggle di Omnibox)
 Klik tombol **Agent** di Omnibox sampe nyala cyan, terus kasih perintah, misal:
@@ -99,7 +111,7 @@ Klik tombol **Agent** di Omnibox sampe nyala cyan, terus kasih perintah, misal:
 Agen bakal: nyusun rencana → eksekusi langkah per langkah pakai tools (baca/tulis file, query database, jalanin kode buat verifikasi) → lapor hasil. Tiap langkah tool-nya kelihatan di panel, bisa di-klik buat lihat output mentahnya.
 
 ### Artifact Studio + Preview
-Klik tombol **Studio** di kanan atas. Semua file yang ditulis agen numpuk di sini (juga kesimpen fisik di `./storage/artifacts/`). Klik file → lihat kodenya → klik **Preview** buat render live. Buat komponen React, pastikan ada `export default` biar ke-render.
+Klik tombol **Studio** di kanan atas. File yang ditulis agen tersimpan fisik di folder workspace thread-nya (`C:\Users\dirga\Documents\Workspace\<thread-id>\`) — bisa lu buka langsung dari Explorer. File yang di-generate sistem (gambar/TTS) tersimpan di `./storage/artifacts/` dan bisa di-download dari UI. Klik file → lihat kodenya → klik **Preview** buat render live. Buat komponen React, pastikan ada `export default` biar ke-render.
 
 ### Vector search
 Agen punya akses pencarian semantik lokal — misal lu suruh dia nyimpen & nyari-nyari catatan, dia pakai embedding buat nyari yang paling mirip maknanya, bukan sekadar keyword. Nggak perlu setting apa-apa selama `EMBEDDING_MODEL` didukung gateway lu.
