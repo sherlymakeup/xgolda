@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "../../db/index.ts";
 import { agentRuns, messages, toolExecutions } from "../../db/schema.ts";
-import { chatOnce } from "../ai/client.ts";
+import { chatOnce, streamChat } from "../ai/client.ts";
 import { getConfig, num } from "../config.ts";
 import { extractToolCalls } from "../ai/parser.ts";
 import {
@@ -16,6 +16,7 @@ import { getSkillCatalogText } from "../skills/loader.ts";
 import { generatePlan } from "./planner.ts";
 import { summarizeToolHistory } from "./context.ts";
 import { getSessionWorkspace } from "./workspace.ts";
+import { emitRunEvent } from "./bus.ts";
 
 export interface AgentRunOptions {
   runId: string;
@@ -91,6 +92,18 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       );
     }
     await setStatus("running", { planTreeJson, currentStep: 0 });
+    // Siarkan rencana ke client SSE
+    try {
+      const steps = JSON.parse(planTreeJson) as {
+        step: number;
+        title: string;
+        description: string;
+        tool: string | null;
+      }[];
+      emitRunEvent(opts.runId, { type: "plan", steps });
+    } catch {
+      /* abaikan */
+    }
 
     // --- EXECUTE LOOP ---
     // Folder kerja sesi (di-jail) — diberitahukan ke model via system prompt
@@ -227,7 +240,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         "Langkah maksimum tercapai. Riwayat eksekusi tool tersimpan dan bisa dilihat di status run.";
     }
 
-    // CRITIC PASS: verifikasi independen sebelum jawaban final diserahkan.
+    // CRITIC PASS (streaming): verifikasi independen sebelum jawaban final diserahkan.
+    // Token-token jawaban final disiarkan via SSE agar client bisa streaming.
     // Hanya bila ada eksekusi tool (ada bukti yang bisa diverifikasi).
     if (finalAnswer && history.length > 0 && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
       try {
@@ -255,7 +269,9 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           (written.length > 0 ? written.join(", ") : "(tidak ada)") +
           `\nTool yang GAGAL: ` +
           (failed.length > 0 ? failed.join(" | ") : "(tidak ada)");
-        const { content: corrected } = await chatOnce(
+        const draftLen = finalAnswer.trim().length;
+        let streamed = "";
+        const r = await streamChat(
           [
             {
               role: "user",
@@ -267,15 +283,68 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
               ),
             },
           ],
-          { model, temperature: 0.2 }
+          {
+            model,
+            temperature: 0.2,
+            onEvent: (e) => {
+              if (e.type === "content" && e.delta) {
+                streamed += e.delta;
+                emitRunEvent(opts.runId, { type: "token", text: e.delta });
+              }
+            },
+          }
         );
-        if (corrected.trim()) finalAnswer = corrected.trim();
+        const corrected = (r.content || streamed).trim();
+        // GUARD anti-garble: tolak output critic yang degenerate
+        // (mis. draf panjang -> koreksi cuma beberapa karakter aneh).
+        if (corrected) {
+          const degenerate = draftLen > 200 && corrected.length < 50;
+          if (!degenerate) {
+            finalAnswer = corrected;
+          } else {
+            console.error(
+              `[agent] critic degenerate (${corrected.length} char), pakai draf`
+            );
+          }
+        }
       } catch (e) {
         console.error("[agent] critic gagal, pakai draf:", e instanceof Error ? e.message : e);
       }
+    } else if (finalAnswer) {
+      // Tanpa critic: siarkan draf utuh sebagai satu event final
+      emitRunEvent(opts.runId, { type: "final", text: finalAnswer });
     }
 
-    // Simpan jawaban final sebagai pesan asisten di sesi (bila ada sessionId)
+    // RECOVERY: bila jawaban final degenerate (kosong/sampah), coba satu
+    // panggilan ringkasan dari bukti tool — jangan simpan "】 【." ke user.
+    const meaningful = finalAnswer.replace(/[\s【】\[\]]/g, "");
+    if (history.length > 0 && meaningful.length < 10) {
+      try {
+        const { content } = await chatOnce(
+          [
+            {
+              role: "user",
+              content:
+                `Tulis jawaban final untuk user dalam Bahasa Indonesia.\n\n` +
+                `GOAL: ${opts.goal}\n\n` +
+                `RINGKASAN HASIL TOOL:\n${summarizeToolHistory(history)}\n\n` +
+                `Tulis langsung: apa yang dikerjakan dan hasilnya. ` +
+                `Jangan mengarang di luar bukti tool di atas.`,
+            },
+          ],
+          { model, temperature: 0.4 }
+        );
+        if (content.trim().replace(/[\s【】\[\]]/g, "").length >= 10) {
+          finalAnswer = content.trim();
+          emitRunEvent(opts.runId, { type: "final", text: finalAnswer });
+        }
+      } catch (e) {
+        console.error("[agent] recovery gagal:", e instanceof Error ? e.message : e);
+      }
+    }
+
+    // Simpan jawaban final sebagai pesan asisten di sesi (bila ada sessionId),
+    // ditautkan ke run ini untuk layout timeline per-bubble.
     if (opts.sessionId && finalAnswer) {
       await db.insert(messages).values({
         id: nanoid(),
@@ -283,6 +352,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         role: "assistant",
         content: finalAnswer,
         reasoningContent: "",
+        runId: opts.runId,
         createdAt: Date.now(),
       });
     }
@@ -293,11 +363,17 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       finishedAt: Date.now(),
       ...(finalAnswer ? { resultText: finalAnswer } : {}),
     });
+    emitRunEvent(opts.runId, { type: "done", status: "completed" });
   } catch (e) {
     const gw = toGatewayError(e);
     await setStatus("failed", {
       error: `${gw.error} (${gw.code})`,
       finishedAt: Date.now(),
     });
+    emitRunEvent(opts.runId, {
+      type: "error",
+      message: `${gw.error} (${gw.code})`,
+    });
+    emitRunEvent(opts.runId, { type: "done", status: "failed" });
   }
 }

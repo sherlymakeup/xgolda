@@ -43,6 +43,13 @@
       "when": 1791869115236,
       "tag": "0005_agent_parent_run",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791872798181,
+      "tag": "0006_stormy_stryfe",
+      "breakpoints": true
     }
   ]
 }

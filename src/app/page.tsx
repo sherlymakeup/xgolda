@@ -28,6 +28,7 @@ import {
 interface ActiveRun {
   runId: string;
   goal: string;
+  createdAt: number;
 }
 
 export default function Home() {
@@ -187,7 +188,7 @@ export default function Home() {
         }
         syncThreadUrl(sid);
         const { runId } = await startAgentRun(goal, sid, opts.model, text);
-        setRuns((r) => [...r, { runId, goal: text }]);
+        setRuns((r) => [...r, { runId, goal: text, createdAt: Date.now() }]);
         // Tampilkan pesan user langsung; jawaban final dimuat ulang saat run selesai
         setMessages((m) => [
           ...m,
@@ -422,32 +423,53 @@ export default function Home() {
                 <div className="mx-auto w-full max-w-[52rem] px-4 md:px-6 py-8">
                   <div className="w-full min-w-0">
                     <div className="space-y-6 pb-6">
-                      {messages.map((m) => (
-                        <MessageItem key={m.id} message={m} />
-                      ))}
-
-                      {runs.map((r) => (
-                        <AgentPanel
-                          key={r.runId}
-                          runId={r.runId}
-                          goal={r.goal}
-                          onClose={() =>
-                            setRuns((list) =>
-                              list.filter((x) => x.runId !== r.runId)
-                            )
-                          }
-                          onDone={() => {
-                            // Run selesai: muat ulang pesan sesi agar jawaban final muncul
-                            const sid = activeId;
-                            if (sid) {
-                              getSession(sid)
-                                .then(({ messages }) => setMessages(messages))
-                                .catch(() => {});
-                              refreshSessions();
-                            }
-                          }}
-                        />
-                      ))}
+                      {(() => {
+                        // Timeline per-bubble: pesan & run agen diurut kronologis.
+                        // Urutan tiap run: [user bubble] → [plan box] → [bubble jawaban].
+                        // Pesan jawaban final (runId terisi) yang run-nya masih aktif
+                        // tidak dirender di alur pesan — bubble-nya dirender panel
+                        // tepat di bawah plan box-nya.
+                        const activeRunIds = new Set(runs.map((r) => r.runId));
+                        type TimelineItem =
+                          | { kind: "message"; key: string; at: number; message: ChatMessage }
+                          | { kind: "run"; key: string; at: number; run: ActiveRun };
+                        const timeline: TimelineItem[] = [];
+                        for (const m of messages) {
+                          if (m.role === "assistant" && m.runId && activeRunIds.has(m.runId))
+                            continue;
+                          timeline.push({ kind: "message", key: m.id, at: m.createdAt, message: m });
+                        }
+                        for (const r of runs) {
+                          timeline.push({ kind: "run", key: r.runId, at: r.createdAt, run: r });
+                        }
+                        timeline.sort((a, b) => a.at - b.at);
+                        return timeline.map((item) =>
+                          item.kind === "message" ? (
+                            <MessageItem key={item.key} message={item.message} />
+                          ) : (
+                            <AgentPanel
+                              key={item.key}
+                              runId={item.run.runId}
+                              onClose={() =>
+                                setRuns((list) =>
+                                  list.filter((x) => x.runId !== item.run.runId)
+                                )
+                              }
+                              onDone={() => {
+                                // Run selesai: muat ulang pesan sesi agar jawaban final
+                                // tersimpan persisten (ditampilkan setelah reload)
+                                const sid = activeId;
+                                if (sid) {
+                                  getSession(sid)
+                                    .then(({ messages }) => setMessages(messages))
+                                    .catch(() => {});
+                                  refreshSessions();
+                                }
+                              }}
+                            />
+                          )
+                        );
+                      })()}
 
                       {streaming && (
                         <MessageItem

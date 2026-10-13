@@ -18,6 +18,8 @@ export interface ChatMessage {
   reasoningContent: string;
   toolName?: string | null;
   attachmentsJson?: string | null;
+  /** Run agen penghasil pesan ini (jawaban final) — untuk layout timeline. */
+  runId?: string | null;
   createdAt: number;
 }
 

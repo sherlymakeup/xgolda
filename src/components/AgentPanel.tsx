@@ -17,11 +17,13 @@ import {
   decideApproval,
   getAgentStatus,
   type AgentRunStatus,
+  type ChatMessage,
 } from "@/lib/client-api";
+import type { RunEvent } from "@/lib/agent/bus";
+import MessageItem from "./MessageItem";
 
 interface Props {
   runId: string;
-  goal: string;
   onClose: () => void;
   /** Dipanggil sekali saat run selesai/gagal — untuk refresh daftar pesan. */
   onDone?: () => void;
@@ -35,10 +37,12 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Gagal",
 };
 
-export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
+export default function AgentPanel({ runId, onClose, onDone }: Props) {
   const [status, setStatus] = useState<AgentRunStatus | null>(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  /** Teks jawaban final yang di-stream via SSE (token per token). */
+  const [streamText, setStreamText] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const doneFired = useRef(false);
 
@@ -68,10 +72,46 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
     };
   }, [runId]);
 
+  // SSE: streaming token jawaban final agen (real-time, bukan polling)
+  useEffect(() => {
+    const es = new EventSource(`/api/agent/stream?runId=${encodeURIComponent(runId)}`);
+    es.onmessage = (ev) => {
+      try {
+        const e = JSON.parse(ev.data) as RunEvent;
+        if (e.type === "token") {
+          setStreamText((t) => t + e.text);
+        } else if (e.type === "final") {
+          setStreamText(e.text);
+          es.close();
+        } else if (e.type === "done" || e.type === "error") {
+          // Beri jeda agar token terakhir sempat dirender
+          setTimeout(() => es.close(), 1000);
+        }
+      } catch {
+        /* abaikan frame rusak */
+      }
+    };
+    es.onerror = () => {
+      /* EventSource reconnect otomatis; biarkan */
+    };
+    return () => es.close();
+  }, [runId]);
+
   const runStatus = status?.run.status ?? "queued";
   const done = runStatus === "completed" || runStatus === "failed";
+  // Bubble jawaban: streaming dulu, fallback ke resultText dari status
+  const finalText = streamText || status?.run.resultText || "";
+  const finalMessage: ChatMessage = {
+    id: `${runId}-final`,
+    sessionId: "",
+    role: "assistant",
+    content: finalText,
+    reasoningContent: "",
+    createdAt: Date.now(),
+  };
 
   return (
+    <>
     <div className="rounded-xl border border-signal/40 bg-obsidian-950 shadow-signal-glow overflow-hidden rise-in">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line-hair">
         <span
@@ -84,7 +124,6 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
               ? ` · LANGKAH ${status.run.currentStep}`
               : ""}
           </p>
-          <p className="text-xs text-ink-mute truncate">{goal}</p>
           {status?.run.workspaceDir && (
             <p
               className="font-mono text-[10px] text-ink-faint truncate flex items-center gap-1"
@@ -255,5 +294,10 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
         )}
       </div>
     </div>
+    {/* Bubble jawaban agen — tepat di bawah plan box-nya */}
+    {finalText && (
+      <MessageItem message={finalMessage} streaming={!done && !!streamText} />
+    )}
+    </>
   );
 }

@@ -23,6 +23,8 @@ export const messages = sqliteTable("messages", {
   toolName: text("tool_name"),
   /** Lampiran gambar (vision): JSON [{id, mime}] → file di storage/uploads/ */
   attachmentsJson: text("attachments_json").notNull().default("[]"),
+  /** Run agen yang menghasilkan pesan ini (untuk jawaban final agent) */
+  runId: text("run_id"),
   createdAt: integer("created_at").notNull(),
 });
 
