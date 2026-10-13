@@ -160,11 +160,11 @@ export default function Omnibox({
       >
         {/* Attachment thumbnails */}
         {(attachments.length > 0 || uploading || uploadError) && (
-          <div className="flex items-center gap-2 px-5 pt-3 flex-wrap">
+          <div className="flex items-center gap-1.5 px-4 pt-2.5 flex-wrap">
             {attachments.map((a) => (
               <div
                 key={a.id}
-                className="relative w-16 h-16 rounded-lg overflow-hidden border border-line-soft shrink-0"
+                className="relative w-12 h-12 rounded-lg overflow-hidden border border-line-soft shrink-0"
               >
                 <img
                   src={`/api/uploads/${a.id}/raw`}
@@ -207,13 +207,12 @@ export default function Omnibox({
               : (PLACEHOLDERS[mode] ?? "Tanya apa saja…")
           }
           rows={1}
-          className="w-full bg-transparent resize-none outline-none px-5 pt-4 pb-1 text-[15px] placeholder:text-ink-faint max-h-40"
+          className="w-full bg-transparent resize-none outline-none px-4 pt-3 pb-1 text-sm placeholder:text-ink-faint max-h-40"
           style={{ fieldSizing: "content" } as React.CSSProperties}
         />
-        <div className="px-5 pt-1 pb-2">
-          <ModePills mode={mode} onChange={handleModeChange} modelLabel={modelLabel} />
-        </div>
-        <div className="flex items-center gap-2 px-3 pb-3 pt-1">
+        {/* Satu baris kontrol: mode + model + agent + attach + kirim */}
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pt-1">
+          <ModePills mode={mode} onChange={handleModeChange} modelLabel={modelLabel} compact />
           {/* Model selector dropdown */}
           <div className="relative">
             <button

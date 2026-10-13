@@ -148,6 +148,7 @@ export interface AgentRunStatus {
     result: unknown;
     durationMs: number;
     exitCode?: number | null;
+    createdAt: number;
   }[];
   approvals: {
     id: string;

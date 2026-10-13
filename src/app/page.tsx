@@ -1,6 +1,6 @@
 "use client";
 
-import { FileCode2, Menu, Square } from "lucide-react";
+import { FileCode2, Menu, Square, Terminal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import AgentPanel from "@/components/AgentPanel";
 import ArtifactStudio from "@/components/ArtifactStudio";
@@ -9,8 +9,8 @@ import Omnibox from "@/components/Omnibox";
 import Sidebar, { type View } from "@/components/Sidebar";
 import Hero from "@/components/home/Hero";
 import SuggestionCards from "@/components/home/SuggestionCards";
-import TelemetryPanel from "@/components/telemetry/TelemetryPanel";
 import AgentHub from "@/components/hub/AgentHub";
+import AgentTerminalPanel from "@/components/AgentTerminalPanel";
 import SettingsPage from "@/components/settings/SettingsPage";
 import ConfigPage from "@/components/config/ConfigPage";
 import { looksLikeTask } from "@/lib/intent";
@@ -46,6 +46,10 @@ export default function Home() {
   const [defaultModel, setDefaultModel] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [error, setError] = useState("");
+  // Drawer terminal kontekstual: auto-tampil saat agen memakai terminal_exec
+  const [termOpen, setTermOpen] = useState(false);
+  const [termActive, setTermActive] = useState(false);
+  const termAutoKey = useRef("");
 
   // Muat konfigurasi model dari server (nilai env asli)
   useEffect(() => {
@@ -59,6 +63,26 @@ export default function Home() {
   }, []);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const runIdsKey = runs.map((r) => r.runId).sort().join(",");
+  // Reset penanda auto-open saat tidak ada run aktif
+  useEffect(() => {
+    if (runs.length === 0) {
+      termAutoKey.current = "";
+      setTermActive(false);
+    }
+  }, [runs.length]);
+
+  const handleTermActivity = useCallback(
+    (active: boolean) => {
+      setTermActive(active);
+      if (active && termAutoKey.current !== runIdsKey) {
+        termAutoKey.current = runIdsKey;
+        setTermOpen(true);
+      }
+    },
+    [runIdsKey]
+  );
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -314,6 +338,28 @@ export default function Home() {
             XGOLDA
           </span>
           <div className="flex-1" />
+          {/* Indikator ringkas pengganti panel telemetri */}
+          <span className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] text-ink-faint">
+            <span className="w-1.5 h-1.5 rounded-full bg-signal pip-live" />
+            LIVE
+            {typeof latencyMs === "number" && (
+              <span className="text-ink-mute">· {latencyMs}ms</span>
+            )}
+          </span>
+          <button
+            onClick={() => setTermOpen((v) => !v)}
+            title="Aktivitas terminal agen"
+            className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+              termOpen
+                ? "text-signal bg-obsidian-850"
+                : "text-ink-mute hover:text-ink hover:bg-obsidian-800"
+            }`}
+          >
+            <Terminal size={15} />
+            {termActive && !termOpen && (
+              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-signal pip-live" />
+            )}
+          </button>
           <span className="hidden md:block font-mono text-[10px] tracking-[0.15em] text-ink-faint">
             {view === "hub"
               ? "AGENT HUB & MCP"
@@ -373,8 +419,8 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                <div className="mx-auto w-full max-w-[76rem] px-4 md:px-6 py-8 flex gap-6 justify-center">
-                  <div className="w-full max-w-[48rem] min-w-0">
+                <div className="mx-auto w-full max-w-[52rem] px-4 md:px-6 py-8">
+                  <div className="w-full min-w-0">
                     <div className="space-y-6 pb-6">
                       {messages.map((m) => (
                         <MessageItem key={m.id} message={m} />
@@ -426,13 +472,6 @@ export default function Home() {
                       <div ref={bottomRef} />
                     </div>
                   </div>
-
-                  {/* Panel telemetri kanan (ala design) */}
-                  <div className="hidden xl:block w-[300px] shrink-0">
-                    <div className="sticky top-0">
-                      <TelemetryPanel />
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -440,7 +479,7 @@ export default function Home() {
             {/* Omnibox bawah (saat sudah ada isi) */}
             {!showHome && (
               <div className="shrink-0 border-t border-line-hair bg-void/95 backdrop-blur">
-                <div className="mx-auto w-full max-w-[48rem] px-4 md:px-6 py-4">
+                <div className="mx-auto w-full max-w-[52rem] px-4 md:px-6 py-4">
                   {streaming ? (
                     <button
                       onClick={stopStreaming}
@@ -458,6 +497,14 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {/* Drawer terminal kontekstual (auto-tampil saat agen pakai terminal) */}
+      <AgentTerminalPanel
+        runIds={runs.map((r) => r.runId)}
+        open={termOpen}
+        onClose={() => setTermOpen(false)}
+        onActivityChange={handleTermActivity}
+      />
 
       {/* Artifact Studio kanan */}
       {studioOpen && (

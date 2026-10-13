@@ -16,7 +16,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   decideApproval,
   getAgentStatus,
-  renderMarkdown,
   type AgentRunStatus,
 } from "@/lib/client-api";
 
@@ -73,46 +72,46 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
   const done = runStatus === "completed" || runStatus === "failed";
 
   return (
-    <div className="rounded-2xl border border-signal/40 bg-obsidian-950 shadow-signal-glow overflow-hidden rise-in">
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-line-hair">
+    <div className="rounded-xl border border-signal/40 bg-obsidian-950 shadow-signal-glow overflow-hidden rise-in">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-line-hair">
         <span
-          className={`w-2 h-2 rounded-full bg-signal shrink-0 ${!done ? "pip-live" : ""}`}
+          className={`w-1.5 h-1.5 rounded-full bg-signal shrink-0 ${!done ? "pip-live" : ""}`}
         />
         <div className="flex-1 min-w-0">
-          <p className="font-mono text-[11px] tracking-[0.08em] text-signal">
+          <p className="font-mono text-[10px] tracking-[0.08em] text-signal">
             AGENT · {STATUS_LABEL[runStatus] ?? runStatus}
             {runStatus === "running" && status
               ? ` · LANGKAH ${status.run.currentStep}`
               : ""}
           </p>
-          <p className="text-sm text-ink-mute truncate mt-0.5">{goal}</p>
+          <p className="text-xs text-ink-mute truncate">{goal}</p>
           {status?.run.workspaceDir && (
             <p
-              className="font-mono text-[10px] text-ink-faint truncate mt-0.5 flex items-center gap-1"
+              className="font-mono text-[10px] text-ink-faint truncate flex items-center gap-1"
               title={status.run.workspaceDir}
             >
-              <FolderGit2 size={11} className="shrink-0" />
+              <FolderGit2 size={10} className="shrink-0" />
               {status.run.workspaceDir}
             </p>
           )}
         </div>
         {!done ? (
-          <Loader2 size={15} className="text-signal animate-spin shrink-0" />
+          <Loader2 size={13} className="text-signal animate-spin shrink-0" />
         ) : runStatus === "completed" ? (
-          <CheckCircle2 size={15} className="text-green-400 shrink-0" />
+          <CheckCircle2 size={13} className="text-green-400 shrink-0" />
         ) : (
-          <XCircle size={15} className="text-red-400 shrink-0" />
+          <XCircle size={13} className="text-red-400 shrink-0" />
         )}
         <button
           onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-obsidian-800"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-obsidian-800"
           aria-label="Tutup panel agen"
         >
-          <X size={14} />
+          <X size={13} />
         </button>
       </div>
 
-      <div className="max-h-72 overflow-y-auto px-4 py-3 space-y-2">
+      <div className="max-h-56 overflow-y-auto px-3 py-2 space-y-1.5">
         {error && <p className="text-xs text-red-400">{error}</p>}
 
         {/* Approval gate — perintah berbahaya menunggu keputusan */}
@@ -161,33 +160,35 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
           </div>
         )}
 
-        {/* Rencana */}
+        {/* Rencana — ringkas */}
         {status && status.plan.length > 0 && (
-          <div className="space-y-1 mb-3">
-            <p className="font-mono text-[10px] tracking-widest text-ink-faint mb-1.5">
+          <div className="mb-2">
+            <p className="font-mono text-[9px] tracking-[0.15em] text-ink-faint mb-1">
               RENCANA
             </p>
-            {status.plan.map((p, i) => {
-              const stepDone =
-                status.run.currentStep > p.step || done;
-              return (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  {stepDone ? (
-                    <CheckCircle2 size={13} className="text-signal mt-0.5 shrink-0" />
-                  ) : (
-                    <Circle size={13} className="text-ink-faint mt-0.5 shrink-0" />
-                  )}
-                  <span className={stepDone ? "text-ink-mute" : "text-ink-faint"}>
-                    {p.title}
-                    {p.tool && (
-                      <span className="font-mono text-[10px] text-signal/80 ml-1.5">
-                        {p.tool}
-                      </span>
+            <div className="space-y-0.5">
+              {status.plan.map((p, i) => {
+                const stepDone =
+                  status.run.currentStep > p.step || done;
+                return (
+                  <div key={i} className="flex items-center gap-1.5 text-[11px] leading-tight">
+                    {stepDone ? (
+                      <CheckCircle2 size={11} className="text-signal shrink-0" />
+                    ) : (
+                      <Circle size={11} className="text-ink-faint shrink-0" />
                     )}
-                  </span>
-                </div>
-              );
-            })}
+                    <span className={`truncate ${stepDone ? "text-ink-mute" : "text-ink-faint"}`}>
+                      {p.title}
+                      {p.tool && (
+                        <span className="font-mono text-[9px] text-signal/80 ml-1">
+                          {p.tool}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -208,33 +209,33 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
           return (
             <div
               key={s.id}
-              className="rounded-xl border border-line-hair bg-obsidian-900 overflow-hidden"
+              className="rounded-lg border border-line-hair bg-obsidian-900 overflow-hidden"
             >
               <button
                 onClick={() => setExpanded(isOpen ? null : s.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-obsidian-850 transition-colors"
+                className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-obsidian-850 transition-colors"
               >
-                <Wrench size={13} className="text-signal shrink-0" />
-                <span className="font-mono text-xs text-ink truncate flex-1">
+                <Wrench size={11} className="text-signal shrink-0" />
+                <span className="font-mono text-[11px] text-ink truncate flex-1">
                   {s.toolName}
                 </span>
-                <span className="font-mono text-[10px] text-ink-faint shrink-0">
+                <span className="font-mono text-[9px] text-ink-faint shrink-0">
                   {s.durationMs}ms
                 </span>
                 {resultOk === true && (
-                  <CheckCircle2 size={13} className="text-green-400 shrink-0" />
+                  <CheckCircle2 size={11} className="text-green-400 shrink-0" />
                 )}
                 {resultOk === false && (
-                  <XCircle size={13} className="text-red-400 shrink-0" />
+                  <XCircle size={11} className="text-red-400 shrink-0" />
                 )}
                 <ChevronDown
-                  size={13}
+                  size={11}
                   className={`text-ink-faint shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
                 />
               </button>
               {isOpen && (
-                <div className="px-3 pb-3">
-                  <pre className="font-mono text-[11px] text-ink-mute whitespace-pre-wrap break-words bg-void rounded-lg p-2.5 border border-line-hair max-h-48 overflow-y-auto">
+                <div className="px-2.5 pb-2">
+                  <pre className="font-mono text-[10px] text-ink-mute whitespace-pre-wrap break-words bg-void rounded-md p-2 border border-line-hair max-h-40 overflow-y-auto">
                     {resultText || "(kosong)"}
                   </pre>
                 </div>
@@ -244,27 +245,12 @@ export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
         })}
 
         {status && status.run.error && (
-          <p className="text-xs text-red-400 font-mono">{status.run.error}</p>
-        )}
-
-        {/* Jawaban final agen */}
-        {done && status?.run.resultText && (
-          <div className="mt-3">
-            <p className="font-mono text-[10px] tracking-widest text-signal mb-1.5">
-              HASIL
-            </p>
-            <div
-              className="prose-xgolda text-sm text-ink bg-void rounded-xl border border-line-hair px-3.5 py-3 break-words"
-              dangerouslySetInnerHTML={{
-                __html: renderMarkdown(status.run.resultText),
-              }}
-            />
-          </div>
+          <p className="text-[11px] text-red-400 font-mono">{status.run.error}</p>
         )}
 
         {!status && !error && (
-          <p className="text-xs text-ink-faint font-mono flex items-center gap-2">
-            <Play size={12} /> Menghubungi agen…
+          <p className="text-[11px] text-ink-faint font-mono flex items-center gap-2">
+            <Play size={11} /> Menghubungi agen…
           </p>
         )}
       </div>
