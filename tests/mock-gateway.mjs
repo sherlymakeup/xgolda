@@ -113,6 +113,17 @@ const server = http.createServer((req, res) => {
       res.end(
         JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3, 0.4] }] })
       );
+    } else if (req.method === "POST" && url.endsWith("/audio/speech")) {
+      const bodyObj = JSON.parse(body || "{}");
+      // Input berisi "GAGAL" → simulasi gateway error (untuk uji retry guard).
+      if (String(bodyObj.input || "").includes("GAGAL")) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "mock tts failure" } }));
+        return;
+      }
+      // Sukses: kembalikan byte MP3 palsu.
+      res.writeHead(200, { "Content-Type": "audio/mpeg" });
+      res.end(Buffer.from("ID3-mock-mp3-bytes"));
     } else if (req.method === "GET" && url.endsWith("/models")) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ data: [{ id: "mock-r1" }] }));

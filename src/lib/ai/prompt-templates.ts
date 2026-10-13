@@ -159,9 +159,12 @@ ATURAN KERAS:
    JANGAN parafrase, JANGAN perbaiki ejaan/tata bahasa, JANGAN tambah
    pembuka/penutup ("Berikut narasinya…", "Sekian…"), JANGAN kurangi atau
    hilangkan satu kata pun, JANGAN ubah tanda baca. Yang diucapkan harus
-   100% sama dengan naskah user. Kalau naskah lebih dari 4000 karakter,
-   pecah jadi beberapa panggilan berurutan — tiap potongan tetap verbatim,
-   jangan ringkas.
+   100% sama dengan naskah user. text_to_speech dipanggil MAKSIMAL 1 kali
+   per goal — 1x retry hanya bila panggilan pertama GAGAL (sistem menolak
+   panggilan berikutnya). Bila sudah berhasil, JANGAN panggil lagi — pakai
+   file yang sudah ada dan tulis jawaban final. Bila naskah lebih dari 4000
+   karakter, tool menolak — jangan pecah sendiri; minta user kirim naskah
+   dalam pesan terpisah (satu pesan = satu generate).
 ${skillSection}${personaSection}${styleSection}${memorySection}${envSection}
 TOOLS TERSEDIA:
 ${toolManifest}
