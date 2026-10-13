@@ -10,7 +10,9 @@ import { extractToolCalls } from "../ai/parser.ts";
 import {
   buildAgentSystemPrompt,
   buildStepPrompt,
+  deriveStyleHint,
 } from "../ai/prompt-templates.ts";
+import { filterRelevantMemories, MEMORY_AUTO_RECALL_MAX_CHARS } from "../tools/memory.ts";
 import { toGatewayError } from "../security/sanitization.ts";
 import { TOOL_MAP, getToolManifest, hasTool, toOpenAITools } from "../tools/registry.ts";
 import { getSkillCatalogText } from "../skills/loader.ts";
@@ -90,15 +92,18 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     if (depth === 0) {
       try {
         const persona = (cfg.values.AGENT_PERSONA || "").trim();
+        const styleHint = deriveStyleHint(opts.goal);
+        const ackInstruction = styleHint.includes("Bahasa Inggris")
+          ? "Reply with ONE short sentence (max 15 words) confirming you accept this goal and will work on it. Do NOT start working, do NOT explain the plan — only confirm acceptance."
+          : "Balas dengan SATU kalimat konfirmasi singkat (maksimal 15 kata) bahwa kamu menerima goal ini dan akan mengerjakannya. JANGAN mulai mengerjakan, JANGAN menjelaskan rencana — hanya konfirmasi penerimaan.";
         const { content: ack } = await chatOnce(
           [
             {
               role: "user",
               content:
                 `Kamu adalah XGOLDA Agent. User baru saja memberi goal berikut:\n\n${opts.goal}\n\n` +
-                `Balas dengan SATU kalimat konfirmasi singkat (maksimal 15 kata) bahwa kamu menerima goal ini dan akan mengerjakannya. ` +
-                `JANGAN mulai mengerjakan, JANGAN menjelaskan rencana — hanya konfirmasi penerimaan. ` +
-                `Gunakan Bahasa Indonesia santai.${persona ? ` Gaya: ${persona.slice(0, 200)}` : ""}`,
+                `${ackInstruction} ` +
+                `${persona ? `Gaya: ${persona} ` : ""}${styleHint}`,
             },
           ],
           { model, temperature: 0.5 }
@@ -148,19 +153,28 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     } catch {
       /* fallback: prompt pakai teks generik */
     }
-    // Auto-recall: cari memori jangka panjang yang relevan dengan goal
+    // Auto-recall: cari memori jangka panjang yang relevan dengan goal.
+    // filterRelevantMemories: floor + margin relatif + dedup. Tiap memori
+    // dipotong 500 karakter supaya blok memori tidak membengkak di prompt.
     let memoryBlock = "";
     try {
       const { searchSimilar } = await import("../../db/vector.ts");
-      const hits = await searchSimilar(opts.goal, 3);
-      const relevant = hits.filter((h) => h.score > 0.35);
+      const hits = await searchSimilar(opts.goal, 5);
+      const relevant = filterRelevantMemories(hits);
       if (relevant.length > 0) {
-        memoryBlock = relevant.map((h) => `- ${h.text}`).join("\n");
+        memoryBlock = relevant
+          .map((h) =>
+            h.text.length > MEMORY_AUTO_RECALL_MAX_CHARS
+              ? `- ${h.text.slice(0, MEMORY_AUTO_RECALL_MAX_CHARS)}…`
+              : `- ${h.text}`
+          )
+          .join("\n");
       }
     } catch {
       /* memori gagal bukan fatal — lanjut tanpa memori */
     }
     const persona = (cfg.values.AGENT_PERSONA || "").trim();
+    const styleHint = deriveStyleHint(opts.goal);
     // Profil PC (cached 10 menit) — agen tahu spek & toolchain tanpa perlu nanya
     let environment = "";
     try {
@@ -172,6 +186,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     const systemPrompt = buildAgentSystemPrompt(getToolManifest(), getSkillCatalogText(), {
       workspaceDir,
       persona,
+      styleHint,
       memories: memoryBlock,
       environment,
     });

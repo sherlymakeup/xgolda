@@ -70,3 +70,15 @@ export async function deleteEmbedding(id: string): Promise<boolean> {
   const res = await db.delete(vectorMetadata).where(eq(vectorMetadata.id, id));
   return (res.changes ?? 0) > 0;
 }
+
+/**
+ * Cari entri embedding berdasarkan awalan id (untuk forget_memory: output
+ * recall hanya menampilkan 8 karakter pertama). Brute-force seperti
+ * searchSimilar — skala lokal, tabel kecil.
+ */
+export async function findEmbeddingByIdPrefix(prefix: string): Promise<string | null> {
+  const db = getDb();
+  const rows = await db.select().from(vectorMetadata);
+  const match = rows.find((r) => r.id.startsWith(prefix));
+  return match ? match.id : null;
+}

@@ -18,10 +18,12 @@ process.env.AI_GATEWAY_TOKEN = "test-token";
 
 const { TOOL_DEFINITIONS } = await import("../src/lib/tools/registry.ts");
 const { delegateTaskTool } = await import("../src/lib/tools/delegate.ts");
-const { rememberTool, recallTool } = await import("../src/lib/tools/memory.ts");
+const { rememberTool, recallTool, forgetMemoryTool } = await import("../src/lib/tools/memory.ts");
+const { filterRelevantMemories } = await import("../src/lib/tools/memory.ts");
 const {
   buildAgentSystemPrompt,
   buildPlannerPrompt,
+  deriveStyleHint,
 } = await import("../src/lib/ai/prompt-templates.ts");
 const { verifyFinalAnswer } = await import("../src/lib/agent/verify.ts");
 const {
@@ -57,12 +59,13 @@ describe("Fase 3", () => {
     mock?.kill();
   });
 
-  it("registry punya 14 tools termasuk delegate/memory/system_info", () => {
+  it("registry punya 15 tools termasuk delegate/memory/forget_memory/system_info", () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
-    assert.equal(TOOL_DEFINITIONS.length, 14);
+    assert.equal(TOOL_DEFINITIONS.length, 15);
     assert.ok(names.includes("delegate_task"));
     assert.ok(names.includes("remember"));
     assert.ok(names.includes("recall"));
+    assert.ok(names.includes("forget_memory"));
     assert.ok(names.includes("system_info"));
   });
 
@@ -191,5 +194,130 @@ describe("Fase 3", () => {
     assert.equal(e1.ok, false);
     const e2 = await rememberTool.handler({ fact: "x".repeat(2001) }, {});
     assert.equal(e2.ok, false);
+  });
+
+  it("filterRelevantMemories: floor + margin relatif + dedup", () => {
+    const hits = [
+      { id: "a", text: "User suka kopi tubruk", score: 0.9, source: null },
+      { id: "b", text: "user  SUKA kopi tubruk!", score: 0.85, source: null },
+      { id: "c", text: "User alergi udang", score: 0.8, source: null },
+      { id: "d", text: "Cuaca hari ini cerah", score: 0.4, source: null },
+      { id: "e", text: "Noise rendah", score: 0.2, source: null },
+    ];
+    // cutoff = max(0.35, 0.9 - 0.15) = 0.75 → b dedup, d ekor, e di bawah floor
+    assert.deepEqual(
+      filterRelevantMemories(hits).map((h) => h.id),
+      ["a", "c"]
+    );
+    // Tanpa hit kuat, floor yang berlaku: 0.5 & 0.45 lolos, 0.3 tidak
+    const low = [
+      { id: "x", text: "Satu", score: 0.5, source: null },
+      { id: "y", text: "Dua", score: 0.45, source: null },
+      { id: "z", text: "Tiga", score: 0.3, source: null },
+    ];
+    assert.deepEqual(
+      filterRelevantMemories(low).map((h) => h.id),
+      ["x", "y"]
+    );
+  });
+
+  it("remember dedup: fakta sama (beda kapital/spasi) tidak disimpan 2x", async () => {
+    const fact = `Fakta dedup fase3 ${Date.now()}: user minum kopi tubruk`;
+    try {
+      const w1 = await rememberTool.handler({ fact }, { sessionId: "s1" });
+      assert.equal(w1.ok, true);
+      assert.match(w1.output, /tersimpan/);
+      const w2 = await rememberTool.handler(
+        { fact: `  ${fact.toUpperCase()}  ` },
+        { sessionId: "s1" }
+      );
+      assert.equal(w2.ok, true);
+      assert.match(w2.output, /sudah ada/);
+    } finally {
+      const { searchSimilar } = await import("../src/db/vector.ts");
+      const hits = await searchSimilar("Fakta dedup fase3", 20);
+      for (const h of hits.filter((x) => x.text.includes("Fakta dedup fase3"))) {
+        await deleteEmbedding(h.id);
+      }
+    }
+  });
+
+  it("forget_memory by id (awalan 8 karakter) menghapus memori", async () => {
+    const fact = `Fakta forget-id fase3 ${Date.now()}: user tidak suka pedas`;
+    const { searchSimilar } = await import("../src/db/vector.ts");
+    try {
+      const w = await rememberTool.handler({ fact }, { sessionId: "s1" });
+      assert.equal(w.ok, true);
+      const hits = await searchSimilar("Fakta forget-id fase3", 20);
+      const target = hits.find((h) => h.text.includes("Fakta forget-id fase3"));
+      assert.ok(target, "memori harus ketemu setelah remember");
+      const del = await forgetMemoryTool.handler({ id: target.id.slice(0, 8) }, {});
+      assert.equal(del.ok, true);
+      const after = await searchSimilar("Fakta forget-id fase3", 20);
+      assert.ok(!after.some((h) => h.text.includes("Fakta forget-id fase3")));
+    } finally {
+      const hits = await searchSimilar("Fakta forget-id fase3", 20);
+      for (const h of hits.filter((x) => x.text.includes("Fakta forget-id fase3"))) {
+        await deleteEmbedding(h.id);
+      }
+    }
+  });
+
+  it("forget_memory by query menghapus hit terbaik yang relevan", async () => {
+    const fact = `Fakta forget-q fase3 ${Date.now()}: user alergi kacang`;
+    const { searchSimilar } = await import("../src/db/vector.ts");
+    try {
+      await rememberTool.handler({ fact }, { sessionId: "s1" });
+      const del = await forgetMemoryTool.handler(
+        { query: "Fakta forget-q fase3 alergi kacang" },
+        {}
+      );
+      assert.equal(del.ok, true);
+      assert.match(del.output, /dihapus/);
+      const after = await searchSimilar("Fakta forget-q fase3", 20);
+      assert.ok(!after.some((h) => h.text.includes("Fakta forget-q fase3")));
+    } finally {
+      const hits = await searchSimilar("Fakta forget-q fase3", 20);
+      for (const h of hits.filter((x) => x.text.includes("Fakta forget-q fase3"))) {
+        await deleteEmbedding(h.id);
+      }
+    }
+  });
+
+  it("recall output menyertakan id (untuk forget_memory)", async () => {
+    const fact = `Fakta recall-id fase3 ${Date.now()}: user suka teh melati`;
+    const { searchSimilar } = await import("../src/db/vector.ts");
+    try {
+      await rememberTool.handler({ fact }, { sessionId: "s1" });
+      const r = await recallTool.handler({ query: "Fakta recall-id fase3 teh melati" }, {});
+      assert.equal(r.ok, true);
+      assert.match(r.output, /teh melati/);
+      assert.match(r.output, /\[id:[A-Za-z0-9_-]{8,}\]/);
+    } finally {
+      const hits = await searchSimilar("Fakta recall-id fase3", 20);
+      for (const h of hits.filter((x) => x.text.includes("Fakta recall-id fase3"))) {
+        await deleteEmbedding(h.id);
+      }
+    }
+  });
+
+  it("deriveStyleHint: bahasa + singkat + mendalam", () => {
+    assert.match(deriveStyleHint("create a file for me please"), /Bahasa Inggris/);
+    assert.doesNotMatch(deriveStyleHint("buatkan file laporan"), /Bahasa Inggris/);
+    assert.doesNotMatch(deriveStyleHint("tolong create file"), /Bahasa Inggris/);
+    assert.match(deriveStyleHint("halo bos"), /singkat/);
+    const deep = deriveStyleHint("jelaskan detail cara kerja mesin ini secara lengkap");
+    assert.match(deep, /mendalam/);
+    assert.doesNotMatch(deep, /singkat/);
+  });
+
+  it("system prompt memuat styleHint adaptif", () => {
+    const p = buildAgentSystemPrompt("TOOLS", "SKILLS", {
+      workspaceDir: "/ws/abc",
+      persona: "Panggil user 'bos'.",
+      styleHint: "User menulis dalam Bahasa Inggris — jawab dalam Bahasa Inggris.",
+    });
+    assert.match(p, /PENYESUAIAN GAYA/);
+    assert.match(p, /Bahasa Inggris/);
   });
 });

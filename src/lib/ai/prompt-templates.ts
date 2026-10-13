@@ -27,6 +27,49 @@ Jawabanmu ringkas, langsung ke inti, dan siap pakai. Gunakan format markdown bil
 Jangan pernah menyebut nama penyedia model, API, atau infrastruktur di balik layar — kamu adalah XGOLDA.
 Untuk pertanyaan tentang "device/PC ini" (spek, OS, runtime), jawab LANGSUNG dari blok LINGKUNGAN PC di bawah — jangan minta user mengupload/paste/memberi path sumber spesifikasi. Data perangkat sudah tersedia.`;
 
+/**
+ * Penyesuaian gaya dari pesan user — ini yang membuat persona ADAPTIF
+ * (sebelumnya: string config statis yang sama untuk semua goal).
+ * Deterministik, tanpa LLM call:
+ * - Bahasa: penanda Inggris >= 2 & nol penanda Indonesia → jawab Inggris.
+ *   Penanda Indonesia apa pun menang (user dominan Indonesia; campuran
+ *   "tolong create file" tetap dijawab Indonesia).
+ * - Kedalaman: kata "jelaskan/detail/lengkap/..." → jawab mendalam.
+ *   Kalau tidak ada kata itu & pesan pendek → jawab singkat.
+ */
+const EN_MARKERS = new Set([
+  "the", "a", "an", "is", "are", "you", "your", "please", "how", "what",
+  "why", "when", "create", "make", "write", "build", "generate", "explain",
+  "check", "list", "show", "tell", "give", "help", "need", "want", "can",
+]);
+const ID_MARKERS = new Set([
+  "yang", "dan", "untuk", "dengan", "ini", "itu", "tolong", "buatkan",
+  "buatin", "bikin", "bikinin", "tulis", "buat", "jangan", "sudah", "belum",
+  "kalau", "kalo", "gue", "lu", "bos", "apa", "siapa", "dimana", "gimana",
+  "kenapa", "berapa", "kapan", "kok", "sih", "dong", "aja", "nggak", "gak",
+]);
+const DEPTH_MARKERS = /(jelaskan|detail|lengkap|mendalam|analisis|analisa|bedah|uraikan|langkah|step by step)/i;
+
+export function deriveStyleHint(goal: string): string {
+  const words = goal.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  let en = 0;
+  let id = 0;
+  for (const w of words) {
+    if (EN_MARKERS.has(w)) en++;
+    if (ID_MARKERS.has(w)) id++;
+  }
+  const hints: string[] = [];
+  if (en >= 2 && id === 0) {
+    hints.push("User menulis dalam Bahasa Inggris — jawab dalam Bahasa Inggris.");
+  }
+  if (DEPTH_MARKERS.test(goal)) {
+    hints.push("User minta penjelasan mendalam — jawab detail dan terstruktur.");
+  } else if (goal.trim().length < 80) {
+    hints.push("User menulis singkat — jawab singkat dan to the point, jangan mengembang kecuali diminta.");
+  }
+  return hints.join(" ");
+}
+
 /** System prompt chat + blok persona dari config (adaptif) + profil PC. */
 export async function buildChatSystemPrompt(): Promise<string> {
   try {
@@ -51,6 +94,8 @@ export interface AgentPromptExtras {
   workspaceDir?: string;
   /** Blok persona/gaya komunikasi (dari config AGENT_PERSONA). */
   persona?: string;
+  /** Penyesuaian gaya dari pesan user (deriveStyleHint) — persona adaptif. */
+  styleHint?: string;
   /** Memori jangka panjang yang relevan (auto-recall), format bullet list. */
   memories?: string;
   /** Profil lingkungan PC (OS, CPU, RAM, runtime) — sudah diformat. */
@@ -68,6 +113,9 @@ export function buildAgentSystemPrompt(
     : "";
   const personaSection = extras.persona
     ? `\nGAYA KOMUNIKASI:\n${extras.persona}\n`
+    : "";
+  const styleSection = extras.styleHint
+    ? `\nPENYESUAIAN GAYA (dari pesan user — ikuti ini, mengalahkan default di atas):\n${extras.styleHint}\n`
     : "";
   const memorySection = extras.memories
     ? `\nMEMORI JANGKA PANJANG (relevan dengan goal — manfaatkan, jangan minta ulang info ini):\n${extras.memories}\n`
@@ -101,7 +149,7 @@ ATURAN KERAS:
    user klik Setujui/Tolak. Saat memakai perintah seperti itu, JELASKAN dulu di pesanmu
    kenapa perintah itu perlu dan apa risikonya, supaya user bisa memutuskan.
    Kalau ditolak/kedaluwarsa, tawarkan alternatif yang lebih aman.
-${skillSection}${personaSection}${memorySection}${envSection}
+${skillSection}${personaSection}${styleSection}${memorySection}${envSection}
 TOOLS TERSEDIA:
 ${toolManifest}
 
@@ -120,7 +168,7 @@ GOAL: ${goal}
 Format:
 [{"step": 1, "title": "...", "description": "...", "tool": "nama_tool_atau_null"}]
 
-Maksimal 8 langkah. Tool yang tersedia: sqlite_query, fs_write_artifact, fs_read_artifact, fs_list_artifacts, terminal_exec, read_skill, delegate_task, system_info, web_search, web_fetch, generate_image, text_to_speech, remember, recall.`;
+Maksimal 8 langkah. Tool yang tersedia: sqlite_query, fs_write_artifact, fs_read_artifact, fs_list_artifacts, terminal_exec, read_skill, delegate_task, system_info, web_search, web_fetch, generate_image, text_to_speech, remember, recall, forget_memory.`;
 }
 
 export function buildStepPrompt(

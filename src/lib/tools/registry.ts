@@ -1,7 +1,7 @@
 import { fsListTool, fsReadTool, fsWriteTool } from "./fs-operations.ts";
 import { imageGenTool } from "./image-gen.ts";
 import { delegateTaskTool } from "./delegate.ts";
-import { rememberTool, recallTool } from "./memory.ts";
+import { rememberTool, recallTool, forgetMemoryTool } from "./memory.ts";
 import { systemInfoTool } from "./system-info.ts";
 import { skillReadTool } from "./skill-read.ts";
 import { sqliteQueryTool } from "./sqlite-query.ts";
@@ -26,6 +26,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   delegateTaskTool,
   rememberTool,
   recallTool,
+  forgetMemoryTool,
   systemInfoTool,
 ];
 
