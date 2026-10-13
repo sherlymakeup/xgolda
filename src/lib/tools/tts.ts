@@ -53,9 +53,9 @@ async function textToSpeech(
 export const ttsTool: ToolDefinition = {
   name: "text_to_speech",
   description:
-    "Gunakan ketika user meminta teks diubah menjadi suara, audio, voiceover, atau narasi (mis. 'bacakan teks ini', 'buatkan voiceover untuk...'). Menghasilkan file MP3 via gateway dan menyimpannya sebagai artifact yang bisa diputar di Studio. Jangan dipakai untuk transkrip (itu arah sebaliknya).",
+    "Gunakan ketika user meminta teks diubah menjadi suara, audio, voiceover, atau narasi (mis. 'bacakan teks ini', 'buatkan voiceover untuk...'). Menghasilkan file MP3 via gateway dan menyimpannya sebagai artifact yang bisa diputar di Studio. Jangan dipakai untuk transkrip (itu arah sebaliknya). PENTING: `text` HARUS persis sama dengan naskah yang user berikan — JANGAN parafrase, JANGAN tambah/kurangi satu kata pun, JANGAN ubah ejaan/tanda baca. Kalau naskah >4000 karakter, pecah jadi beberapa panggilan berurutan, tiap potongan tetap verbatim.",
   parameters: {
-    text: { type: "string", description: "Teks yang dibacakan (maks 4000 karakter)", required: true },
+    text: { type: "string", description: "Teks yang dibacakan PERSIS APA ADANYA sesuai naskah user (maks 4000 karakter). JANGAN parafrase, tambah, atau kurangi.", required: true },
     model: { type: "string", description: "Model TTS opsional — kosongkan untuk default config TTS_MODEL" },
     voice: { type: "string", description: "ID voice opsional (mis. ID voice ElevenLabs) — kosongkan untuk default config TTS_VOICE" },
   },
