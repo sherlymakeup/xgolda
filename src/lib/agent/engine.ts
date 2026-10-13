@@ -231,6 +231,30 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     // Hanya bila ada eksekusi tool (ada bukti yang bisa diverifikasi).
     if (finalAnswer && history.length > 0 && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
       try {
+        // Fakta terverifikasi deterministik (bukan klaim model): file yang
+        // benar-benar tertulis + tool yang gagal. Critic wajib memakainya.
+        const written: string[] = [];
+        const failed: string[] = [];
+        for (const h of history) {
+          try {
+            const args = JSON.parse(h.argsJson) as { filename?: string };
+            const res = JSON.parse(h.resultJson) as { ok?: boolean; output?: string };
+            if (h.toolName === "fs_write_artifact" && res.ok && args.filename) {
+              written.push(String(args.filename));
+            } else if (res.ok === false) {
+              failed.push(
+                `${h.toolName}: ${String(res.output || "").slice(0, 200)}`
+              );
+            }
+          } catch {
+            /* abaikan baris rusak */
+          }
+        }
+        const verified =
+          `File yang TERVERIFIKASI tertulis (deterministik): ` +
+          (written.length > 0 ? written.join(", ") : "(tidak ada)") +
+          `\nTool yang GAGAL: ` +
+          (failed.length > 0 ? failed.join(" | ") : "(tidak ada)");
         const { content: corrected } = await chatOnce(
           [
             {
@@ -238,7 +262,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
               content: buildCriticPrompt(
                 opts.goal,
                 finalAnswer,
-                summarizeToolHistory(history)
+                summarizeToolHistory(history),
+                verified
               ),
             },
           ],

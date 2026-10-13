@@ -49,6 +49,7 @@ export function buildAgentSystemPrompt(
 
 ATURAN KERAS:
 1. Kamu HANYA boleh berinteraksi dengan dunia lewat tool di bawah. Jangan mengarang hasil tool.
+   Jangan pernah mengklaim sebuah file "sudah dibuat/tertulis" kecuali tool fs_write_artifact sudah mengembalikan OK untuk file itu — idealnya verifikasi dulu dengan fs_read_artifact.
 2. Untuk memanggil tool, tulis blok persis seperti ini (satu blok per pemanggilan, boleh beberapa blok):
    <toolcall>{"name": "nama_tool", "args": {"param": "nilai"}}</toolcall>
 3. Setelah hasil tool diberikan, lanjutkan ke langkah berikutnya.
@@ -73,7 +74,12 @@ ${toolManifest}
 Pola kerja: pahami goal → cek skill relevan → rencanakan 2-5 langkah → eksekusi satu per satu via tool → verifikasi via terminal_exec → simpulkan.`;
 }
 
-export function buildCriticPrompt(goal: string, draft: string, toolSummary: string): string {
+export function buildCriticPrompt(
+  goal: string,
+  draft: string,
+  toolSummary: string,
+  verified: string = ""
+): string {
   return `Kamu adalah editor QA. Tugasmu: memoles draf jawaban agen — BUKAN menolaknya.
 
 GOAL AWAL:
@@ -82,14 +88,15 @@ ${goal}
 BUKTI EKSEKUSI TOOL (fakta — inilah yang benar-benar terjadi):
 ${toolSummary || "(tidak ada tool dipanggil)"}
 
-DRAF JAWABAN AGEN:
+${verified ? `VERIFIKASI OTOMATIS SISTEM (deterministik — LEBIH DIPERCAYA dari draf):\n${verified}\n\n` : ""}DRAF JAWABAN AGEN:
 ${draft}
 
 Aturan kerja:
 1. Cocokkan setiap klaim di draf dengan BUKTI di atas. Klaim yang didukung bukti (mis. "file tertulis OK", output tool) adalah BENAR — pertahankan, jangan diragukan.
-2. Perbaiki hanya yang TERBUKTI salah: angka/fakta yang bertentangan dengan output tool, atau klaim tentang sesuatu yang tidak ada di bukti SAMA SEKALI.
-3. DILARANG menulis penolakan seperti "tidak dapat dipastikan" / "tidak ada hasil tool yang mendukung" bila bukti menunjukkan tool berhasil dieksekusi.
-4. Jaga gaya bahasa draf. Jangan tambah bagian "Belum dikumpulkan" bila data sudah ada di bukti.
+2. ATURAN FILE (keras): jika draf mengklaim sebuah FILE dibuat/ditulis/diubah, file itu WAJIB ada di daftar "File yang TERVERIFIKASI tertulis". Jika tidak ada → file BELUM dibuat: nyatakan itu dengan jujur dan sertakan penyebab dari "Tool yang GAGAL" bila ada. Jangan pernah mengklaim file sudah dibuat tanpa verifikasi ini.
+3. Perbaiki hanya yang TERBUKTI salah: angka/fakta yang bertentangan dengan output tool, atau klaim tentang sesuatu yang tidak ada di bukti SAMA SEKALI.
+4. DILARANG menulis penolakan seperti "tidak dapat dipastikan" / "tidak ada hasil tool yang mendukung" bila bukti menunjukkan tool berhasil dieksekusi.
+5. Jaga gaya bahasa draf. Jangan tambah bagian "Belum dikumpulkan" bila data sudah ada di bukti.
 
 Keluarkan JAWABAN FINAL yang sudah dikoreksi — langsung jawabannya saja, tanpa menjelaskan proses pemeriksamu.`;
 }

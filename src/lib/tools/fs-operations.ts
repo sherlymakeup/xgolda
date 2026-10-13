@@ -47,9 +47,13 @@ async function fsWrite(
     const target = await jail(filename);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, "utf8");
+    // Verifikasi deterministik: baca balik ukuran file
+    const st = fs.statSync(target);
     return {
       ok: true,
-      output: `OK: tertulis ${content.length} karakter ke ${target}`,
+      output:
+        `OK: tertulis ${content.length} karakter ke ${target} ` +
+        `(terverifikasi ada, ${st.size} byte)`,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
