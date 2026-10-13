@@ -3,6 +3,7 @@
 import { ArrowUp, Bot, Paperclip } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ModePills from "./home/ModePills";
+import { looksLikeTask } from "@/lib/intent";
 
 interface Props {
   onSend: (
@@ -51,7 +52,12 @@ export default function Omnibox({
   const submit = () => {
     const t = text.trim();
     if (!t || streaming) return;
-    const forceAgent = agentMode || mode === "web" || mode === "code";
+    // Auto-route: perintah eksekusi langsung jadi agent task (toggle ikut nyala
+    // sebagai penanda). Approval gate tetap berlaku untuk perintah berbahaya.
+    const taskLike = looksLikeTask(t);
+    if (taskLike) setAgentMode(true);
+    const forceAgent =
+      agentMode || taskLike || mode === "web" || mode === "code";
     onSend(t, { agentMode: forceAgent, model: model || defaultModel, mode });
     setText("");
   };

@@ -12,6 +12,7 @@ import SuggestionCards from "@/components/home/SuggestionCards";
 import TelemetryPanel from "@/components/telemetry/TelemetryPanel";
 import AgentHub from "@/components/hub/AgentHub";
 import SettingsPage from "@/components/settings/SettingsPage";
+import { looksLikeTask } from "@/lib/intent";
 import {
   deleteSession,
   getSession,
@@ -114,12 +115,14 @@ export default function Home() {
   ) => {
     setError("");
     setView("workspace");
+    // Safety net: SuggestionCards mem-bypass Omnibox, jadi deteksi juga di sini.
+    const useAgent = opts.agentMode || looksLikeTask(text);
     // Mode web/code memaksa agent mode; web dapat instruksi riset via terminal
     const goal =
       opts.mode === "web"
         ? `Gunakan web (curl via terminal) bila perlu informasi terkini. ${text}`
         : text;
-    if (opts.agentMode) {
+    if (useAgent) {
       // Mode agen otonom: tampilkan panel, polling status
       try {
         const { runId } = await startAgentRun(goal, activeId, opts.model);
