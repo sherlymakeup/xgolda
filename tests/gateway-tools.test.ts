@@ -81,6 +81,21 @@ describe("gateway tools — validasi argumen", () => {
     assert.match(r.output, /http/);
   });
 
+  it("web_fetch menolak host privat/loopback (SSRF)", async () => {
+    const cases = [
+      "http://127.0.0.1:3000/api/config",
+      "http://localhost:3000/",
+      "http://169.254.169.254/latest/meta-data/",
+      "http://192.168.1.1/admin",
+      "http://10.0.0.5/",
+    ];
+    for (const url of cases) {
+      const r = await webFetchTool.handler({ url }, {});
+      assert.equal(r.ok, false, `${url} harus ditolak`);
+      assert.match(r.output, /ditolak|privat/);
+    }
+  });
+
   it("generate_image menolak prompt kosong & size invalid", async () => {
     let r = await imageGenTool.handler({}, {});
     assert.equal(r.ok, false);

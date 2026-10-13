@@ -37,6 +37,10 @@ export interface AgentRunOptions {
   parentRunId?: string;
   /** Override budget langkah (untuk subagent). */
   maxSteps?: number;
+  /** Sinyal pembatalan (timeout delegate / pembatalan induk). */
+  signal?: AbortSignal;
+  /** Override folder workspace (subagen pakai subfolder .delegates/<subRunId>). */
+  workspaceDir?: string;
 }
 
 /**
@@ -53,6 +57,21 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
   // bila gateway hang di luar timeout per-request.
   const RUN_TIMEOUT_MS = 10 * 60 * 1000;
   const deadline = Date.now() + RUN_TIMEOUT_MS;
+
+  // Satu sinyal pembatalan gabungan: sinyal eksternal (timeout delegate /
+  // pembatalan induk) + deadline internal. Diteruskan ke chatOnce supaya
+  // panggilan gateway yang sedang jalan ikut dibatalkan — bukan cuma
+  // dicek antar-langkah.
+  const abortCtrl = new AbortController();
+  const deadlineTimer = setTimeout(() => abortCtrl.abort(), RUN_TIMEOUT_MS);
+  deadlineTimer.unref?.();
+  const onExternalAbort = () => abortCtrl.abort();
+  opts.signal?.addEventListener("abort", onExternalAbort);
+  const throwIfAborted = () => {
+    if (abortCtrl.signal.aborted) {
+      throw new Error("AGENT_ABORTED: run dibatalkan (timeout/pembatalan)");
+    }
+  };
 
   const setStatus = async (
     status: "planning" | "running" | "completed" | "failed",
@@ -87,6 +106,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
   };
 
   try {
+    throwIfAborted();
     // --- ACK: konfirmasi penerimaan goal — WAJIB respons asli dari gateway,
     // bukan template hardcoded. Hanya untuk run utama (bukan subagent).
     if (depth === 0) {
@@ -106,7 +126,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
                 `${persona ? `Gaya: ${persona} ` : ""}${styleHint}`,
             },
           ],
-          { model, temperature: 0.5 }
+          { model, temperature: 0.5, signal: abortCtrl.signal }
         );
         const ackText = ack.trim().slice(0, 300);
         if (ackText) {
@@ -146,10 +166,14 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     }
 
     // --- EXECUTE LOOP ---
-    // Folder kerja sesi (di-jail) — diberitahukan ke model via system prompt
-    let workspaceDir = "";
+    // Folder kerja sesi (di-jail) — diberitahukan ke model via system prompt.
+    // Subagen pakai override workspaceDir (subfolder .delegates/<subRunId>)
+    // supaya delegate paralel tidak saling timpa file output.
+    let workspaceDir = opts.workspaceDir || "";
     try {
-      if (opts.sessionId) workspaceDir = await getSessionWorkspace(opts.sessionId);
+      if (!workspaceDir && opts.sessionId) {
+        workspaceDir = await getSessionWorkspace(opts.sessionId);
+      }
     } catch {
       /* fallback: prompt pakai teks generik */
     }
@@ -190,6 +214,19 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       memories: memoryBlock,
       environment,
     });
+    // Konteks percakapan thread ini (pesan-pesan sebelumnya + lampiran
+    // gambar sebagai vision parts) — tanpa ini follow-up seperti
+    // "lanjutkan / perbaiki yang tadi" gagal karena agen buta riwayat.
+    let baseMessages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
+    if (opts.sessionId) {
+      try {
+        const { buildChatContext } = await import("./context.ts");
+        const ctxMessages = await buildChatContext(opts.sessionId, systemPrompt);
+        if (ctxMessages.length > 1) baseMessages = ctxMessages;
+      } catch {
+        /* konteks gagal bukan fatal — lanjut tanpa riwayat */
+      }
+    }
     const history: {
       toolName: string;
       argsJson: string;
@@ -199,6 +236,9 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
 
     let finalAnswer = "";
     let step = 0;
+    // Run berakhir prematur (deadline/maxSteps) → currentStep di akhir
+    // mencerminkan langkah yang benar-benar jalan, bukan total plan.
+    let endedEarly = false;
     // Catatan sistem untuk iterasi berikutnya (mis. toolcall malformed)
     let systemNote = "";
     // Native function calling (Opencode-style) — bila gateway/model tidak
@@ -208,7 +248,9 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
 
     while (step < maxSteps) {
       step++;
+      throwIfAborted();
       if (Date.now() > deadline) {
+        endedEarly = true;
         finalAnswer =
           "Batas waktu 10 menit tercapai. Riwayat eksekusi tool tersimpan dan bisa dilihat di status run.";
         break;
@@ -216,7 +258,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       await setStatus("running", { currentStep: step });
 
       const stepMessages: ChatMessage[] = [
-        { role: "system", content: systemPrompt },
+        ...baseMessages,
         {
           role: "user",
           content: buildStepPrompt(
@@ -234,6 +276,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           model,
           temperature: 0.4,
           tools: useNativeTools ? nativeTools : undefined,
+          signal: abortCtrl.signal,
         });
       } catch (e) {
         if (
@@ -249,6 +292,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
           stepResult = await chatOnce(stepMessages, {
             model,
             temperature: 0.4,
+            signal: abortCtrl.signal,
           });
         } else {
           throw e;
@@ -263,20 +307,25 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         extractToolCalls(content);
       const calls =
         stepResult.toolCalls.length > 0 ? stepResult.toolCalls : textCalls;
+      // Native tool_call ber-argumen rusak TIDAK boleh di-drop diam-diam —
+      // sebelumnya malformed native tidak pernah dibaca engine.
+      const nativeMalformed = stepResult.malformedToolCalls ?? 0;
       const malformed =
-        stepResult.toolCalls.length > 0 ? 0 : textMalformed;
+        stepResult.toolCalls.length > 0 ? nativeMalformed : textMalformed;
 
       // Toolcall malformed = tool TIDAK pernah dieksekusi. JANGAN jadikan
       // jawaban final (itu yang bikin agen klaim "sudah dibuat" padahal tidak).
       // Beri tahu model dan beri kesempatan memperbaiki.
       if (malformed > 0) {
         systemNote =
-          `PERINGATAN SISTEM: ${malformed} blok <toolcall> yang kamu kirim ` +
-          `GAGAL di-parse (JSON tidak valid — biasanya newline/quote di dalam ` +
-          `string args tidak di-escape). Tool tersebut BELUM dijalankan sama sekali. ` +
-          `Kirim ulang toolcall-nya dengan JSON valid: escape newline jadi \\n dan ` +
-          `tanda kutip jadi \\" di dalam string. JANGAN mengklaim tool sudah ` +
-          `dijalankan sebelum kamu menerima hasil tool.`;
+          `PERINGATAN SISTEM: ${malformed} pemanggilan tool yang kamu kirim ` +
+          `GAGAL di-parse dan BELUM dijalankan sama sekali. ` +
+          (nativeMalformed > 0
+            ? `Function calling native-nya ber-argumen JSON tidak valid — kirim ulang dengan arguments JSON valid. `
+            : `Blok <toolcall>-nya ber-JSON tidak valid (biasanya newline/quote di dalam ` +
+              `string args tidak di-escape) — kirim ulang dengan JSON valid: escape newline jadi \\n dan ` +
+              `tanda kutip jadi \\" di dalam string. `) +
+          `JANGAN mengklaim tool sudah dijalankan sebelum kamu menerima hasil tool.`;
       }
 
       if (calls.length === 0) {
@@ -332,6 +381,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
             sessionId: opts.sessionId,
             depth,
             model,
+            signal: abortCtrl.signal,
+            workspaceDir: workspaceDir || undefined,
           });
           result = { ...r, durationMs: r.durationMs ?? Date.now() - started };
         } catch (e) {
@@ -350,19 +401,37 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         });
       };
 
-      // delegate_task jalan PARALEL (subagen independen); tool lain sekuensial
+      // delegate_task jalan PARALEL (subagen independen); tool lain sekuensial.
+      // Batas 4 delegate paralel per langkah — fan-out tak terbatas
+      // membanjiri gateway/CPU/DB dan membuat subagen yatim.
       const delegates = calls.filter((c) => c.name === "delegate_task");
       const rest = calls.filter((c) => c.name !== "delegate_task");
       for (const call of rest) {
         await execOne(call);
       }
-      await Promise.all(delegates.map((call) => execOne(call)));
+      const MAX_PARALLEL_DELEGATES = 4;
+      for (const call of delegates.slice(MAX_PARALLEL_DELEGATES)) {
+        const result = {
+          ok: false,
+          output:
+            "ERROR: terlalu banyak delegate_task paralel dalam satu langkah (maks 4) — kerjakan sisanya di langkah berikutnya.",
+        };
+        await logTool(call.name, call.args, result);
+        history.push({
+          toolName: call.name,
+          argsJson: JSON.stringify(call.args),
+          resultJson: JSON.stringify(result),
+          ok: false,
+        });
+      }
+      await Promise.all(delegates.slice(0, MAX_PARALLEL_DELEGATES).map((call) => execOne(call)));
 
       // Bila model menyertakan teks final bersama toolcall terakhir, simpan kandidatnya
       if (cleaned) finalAnswer = cleaned;
     }
 
     if (step >= maxSteps && !finalAnswer) {
+      endedEarly = true;
       finalAnswer =
         "Langkah maksimum tercapai. Riwayat eksekusi tool tersimpan dan bisa dilihat di status run.";
     }
@@ -370,7 +439,9 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     // VERIFIKASI DETERMINISTIK (menggantikan critic LLM): cocokkan klaim
     // jawaban final dengan bukti tool. Hanya mengintervensi bila ada
     // kontradiksi yang terbukti — selain itu draf dibiarkan apa adanya.
-    if (finalAnswer && history.length > 0 && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
+    // TIDAK ada gate history.length — run tanpa tool call pun harus
+    // diverifikasi (klaim file tanpa tool call apa pun = belum terverifikasi).
+    if (finalAnswer && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
       const written: string[] = [];
       const failed: string[] = [];
       const succeeded: string[] = [];
@@ -456,8 +527,9 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     }
 
     // Simpan juga di baris run agar API status/panel bisa menampilkannya
-    // walau tanpa sessionId. currentStep = total plan + 1 → semua langkah plan
-    // tampil centang (run selesai = rencana dijalankan sampai akhir).
+    // walau tanpa sessionId. currentStep: run yang berakhir prematur
+    // (deadline/maxSteps) memakai langkah yang benar-benar jalan — bukan
+    // total plan + 1 (yang bikin semua langkah tampil centang).
     let totalPlanSteps = 0;
     try {
       totalPlanSteps = (JSON.parse(planTreeJson) as unknown[]).length;
@@ -466,20 +538,33 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
     }
     await setStatus("completed", {
       finishedAt: Date.now(),
-      currentStep: totalPlanSteps + 1,
+      currentStep: endedEarly ? Math.min(step, totalPlanSteps) : totalPlanSteps + 1,
       ...(finalAnswer ? { resultText: finalAnswer } : {}),
     });
     emitRunEvent(opts.runId, { type: "done", status: "completed" });
   } catch (e) {
     const gw = toGatewayError(e);
-    await setStatus("failed", {
-      error: `${gw.error} (${gw.code})`,
-      finishedAt: Date.now(),
-    });
-    emitRunEvent(opts.runId, {
-      type: "error",
-      message: `${gw.error} (${gw.code})`,
-    });
-    emitRunEvent(opts.runId, { type: "done", status: "failed" });
+    const msg = `${gw.error} (${gw.code})`;
+    // Best-effort: bila penanda `failed` ikut throw (DB locked/disk penuh),
+    // run tidak boleh nyangkut `running` selamanya tanpa pemberitahuan.
+    try {
+      await setStatus("failed", {
+        error: msg,
+        finishedAt: Date.now(),
+      });
+      emitRunEvent(opts.runId, {
+        type: "error",
+        message: msg,
+      });
+      emitRunEvent(opts.runId, { type: "done", status: "failed" });
+    } catch (inner) {
+      console.error(
+        "[agent] gagal menandai run failed:",
+        inner instanceof Error ? inner.message : inner
+      );
+    }
+  } finally {
+    clearTimeout(deadlineTimer);
+    opts.signal?.removeEventListener("abort", onExternalAbort);
   }
 }

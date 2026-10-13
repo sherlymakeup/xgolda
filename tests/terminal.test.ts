@@ -89,3 +89,36 @@ describe("terminal_exec", () => {
     assert.match(r.output, /b/);
   });
 });
+
+describe("terminal_exec jail bentuk relatif", () => {
+  it("perintah dengan .. ditolak", async () => {
+    const r = await terminalExecTool.handler({ command: "cat ../../etc/passwd" }, {});
+    assert.equal(r.ok, false);
+    assert.match(r.output, /ACCESS_DENIED/);
+    assert.match(r.output, /\.\./);
+  });
+
+  it("cd .. ditolak", async () => {
+    const r = await terminalExecTool.handler({ command: "cd .." }, {});
+    assert.equal(r.ok, false);
+    assert.match(r.output, /ACCESS_DENIED/);
+  });
+
+  it("$env:USERPROFILE dan $HOME ditolak", async () => {
+    const r1 = await terminalExecTool.handler({ command: "echo $env:USERPROFILE" }, {});
+    assert.equal(r1.ok, false);
+    assert.match(r1.output, /ACCESS_DENIED/);
+    const r2 = await terminalExecTool.handler({ command: "echo $HOME" }, {});
+    assert.equal(r2.ok, false);
+    assert.match(r2.output, /ACCESS_DENIED/);
+  });
+
+  it(".. di dalam kata (a..b) TIDAK diblokir", async () => {
+    const r = await terminalExecTool.handler(
+      { command: IS_WIN ? "Write-Output 'a..b'" : "echo 'a..b'" },
+      {}
+    );
+    assert.equal(r.ok, true);
+    assert.match(r.output, /a\.\.b/);
+  });
+});

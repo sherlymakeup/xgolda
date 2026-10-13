@@ -37,6 +37,31 @@ const DANGEROUS_PATTERNS: { re: RegExp; reason: string }[] = [
     reason: "eksekusi kode remote via pipe (| sh / | powershell)",
   },
   { re: /\b(iex|invoke-expression)\s*\(/i, reason: "Invoke-Expression (eksekusi string dinamis)" },
+  // iex TANPA paren: bentuk pipeline `... | iex` dan `iex $cmd` lolos dari
+  // pola di atas. Hanya cocok bila iex di posisi perintah (awal / setelah
+  // | ; &) — bukan `Get-Content iex.txt`.
+  {
+    re: /(?:^|[|;&])\s*(iex|invoke-expression)\b/i,
+    reason: "Invoke-Expression tanpa paren (bentuk pipeline)",
+  },
+  // PowerShell -EncodedCommand / -enc (base64) — bypass semua pola teks.
+  {
+    re: /-(encodedcommand|enc)\b/i,
+    reason: "EncodedCommand (perintah base64, tidak bisa diaudit pola)",
+  },
+  // .NET .Delete() rekursif via method call, mis. $_.Delete() / $f.Delete().
+  { re: /\.\s*Delete\s*\(/i, reason: "penghapusan via method .Delete()" },
+  // Start-Process / saps dengan biner sistem berbahaya.
+  {
+    re: /\b(start-process|saps)\b[^;|&]*?\b(format\.com|diskpart|shutdown|bcdedit|vssadmin|regedit)\b/i,
+    reason: "Start-Process biner sistem berbahaya",
+  },
+  { re: /\bformat\.com\b/i, reason: "format volume (format.com)" },
+  // wmic ... shutdown/format/delete.
+  {
+    re: /\bwmic\b[^;|&]*?\b(shutdown|format|delete)\b/i,
+    reason: "wmic perintah destruktif",
+  },
   // --- Fork bomb ---
   { re: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/, reason: "fork bomb" },
 ];

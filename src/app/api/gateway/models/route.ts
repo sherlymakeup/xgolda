@@ -5,8 +5,8 @@ import { env } from "@/lib/env";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Cache 5 menit agar dropdown model tidak menghantam gateway tiap buka. */
-let cache: { at: number; data: { id: string; owned_by: string }[] } | null = null;
+/** Cache 5 menit PER CAPABILITY agar dropdown model tidak menghantam gateway tiap buka. */
+const cache = new Map<string, { at: number; data: { id: string; owned_by: string }[] }>();
 const TTL_MS = 5 * 60 * 1000;
 
 /**
@@ -20,8 +20,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "capability tidak valid" }, { status: 400 });
   }
   const now = Date.now();
-  if (cache && now - cache.at < TTL_MS) {
-    return NextResponse.json({ models: cache.data, cached: true });
+  const hit = cache.get(capability);
+  if (hit && now - hit.at < TTL_MS) {
+    return NextResponse.json({ models: hit.data, cached: true });
   }
   try {
     const cfg = await getConfig();
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
       id: d.id,
       owned_by: d.owned_by || "?",
     }));
-    cache = { at: now, data: models };
+    cache.set(capability, { at: now, data: models });
     return NextResponse.json({ models, cached: false });
   } catch (e) {
     // Fallback: kembalikan model default agar UI tetap bisa dipakai

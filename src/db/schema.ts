@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /** Thread obrolan. */
 export const sessions = sqliteTable("sessions", {
@@ -12,60 +12,82 @@ export const sessions = sqliteTable("sessions", {
 });
 
 /** Riwayat chat. reasoningContent menampung output CoT. */
-export const messages = sqliteTable("messages", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id")
-    .notNull()
-    .references(() => sessions.id, { onDelete: "cascade" }),
-  role: text("role", { enum: ["user", "assistant", "system", "tool"] }).notNull(),
-  content: text("content").notNull().default(""),
-  reasoningContent: text("reasoning_content").notNull().default(""),
-  toolName: text("tool_name"),
-  /** Lampiran gambar (vision): JSON [{id, mime}] → file di storage/uploads/ */
-  attachmentsJson: text("attachments_json").notNull().default("[]"),
-  /** Run agen yang menghasilkan pesan ini (untuk jawaban final agent) */
-  runId: text("run_id"),
-  createdAt: integer("created_at").notNull(),
-});
+export const messages = sqliteTable(
+  "messages",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["user", "assistant", "system", "tool"] }).notNull(),
+    content: text("content").notNull().default(""),
+    reasoningContent: text("reasoning_content").notNull().default(""),
+    toolName: text("tool_name"),
+    /** Lampiran gambar (vision): JSON [{id, mime}] → file di storage/uploads/ */
+    attachmentsJson: text("attachments_json").notNull().default("[]"),
+    /** Run agen yang menghasilkan pesan ini (untuk jawaban final agent) */
+    runId: text("run_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("messages_session_id_idx").on(t.sessionId),
+    index("messages_run_id_idx").on(t.runId),
+  ]
+);
 
 /** Eksekusi autonomous agent. */
-export const agentRuns = sqliteTable("agent_runs", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id").references(() => sessions.id, {
-    onDelete: "set null",
-  }),
-  /** Run induk bila ini subagent dari delegate_task (null = run utama). */
-  parentRunId: text("parent_run_id"),
-  goal: text("goal").notNull(),
-  status: text("status", {
-    enum: ["queued", "planning", "running", "completed", "failed"],
-  })
-    .notNull()
-    .default("queued"),
-  planTreeJson: text("plan_tree_json").notNull().default("[]"),
-  currentStep: integer("current_step").notNull().default(0),
-  error: text("error"),
-  /** Jawaban final agen — ditampilkan di panel & API status. */
-  resultText: text("result_text"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-  finishedAt: integer("finished_at"),
-});
+export const agentRuns = sqliteTable(
+  "agent_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    /** Run induk bila ini subagent dari delegate_task (null = run utama). */
+    parentRunId: text("parent_run_id"),
+    goal: text("goal").notNull(),
+    status: text("status", {
+      enum: ["queued", "planning", "running", "completed", "failed"],
+    })
+      .notNull()
+      .default("queued"),
+    planTreeJson: text("plan_tree_json").notNull().default("[]"),
+    currentStep: integer("current_step").notNull().default(0),
+    error: text("error"),
+    /** Jawaban final agen — ditampilkan di panel & API status. */
+    resultText: text("result_text"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    finishedAt: integer("finished_at"),
+  },
+  (t) => [
+    index("agent_runs_session_id_idx").on(t.sessionId),
+    index("agent_runs_parent_run_id_idx").on(t.parentRunId),
+    index("agent_runs_status_idx").on(t.status),
+  ]
+);
 
 /** Audit log pemanggilan tool oleh agen. */
-export const toolExecutions = sqliteTable("tool_executions", {
-  id: text("id").primaryKey(),
-  runId: text("run_id").references(() => agentRuns.id, { onDelete: "cascade" }),
-  sessionId: text("session_id").references(() => sessions.id, {
-    onDelete: "cascade",
-  }),
-  toolName: text("tool_name").notNull(),
-  argsJson: text("args_json").notNull().default("{}"),
-  resultJson: text("result_json").notNull().default("{}"),
-  durationMs: integer("duration_ms").notNull().default(0),
-  exitCode: integer("exit_code"),
-  createdAt: integer("created_at").notNull(),
-});
+export const toolExecutions = sqliteTable(
+  "tool_executions",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").references(() => agentRuns.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "cascade",
+    }),
+    toolName: text("tool_name").notNull(),
+    argsJson: text("args_json").notNull().default("{}"),
+    resultJson: text("result_json").notNull().default("{}"),
+    durationMs: integer("duration_ms").notNull().default(0),
+    exitCode: integer("exit_code"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("tool_executions_run_id_idx").on(t.runId),
+    index("tool_executions_session_id_idx").on(t.sessionId),
+  ]
+);
 
 /** Override konfigurasi dari UI (halaman Update Config) — mengalahkan nilai .env. */
 export const appConfig = sqliteTable("app_config", {
@@ -75,47 +97,63 @@ export const appConfig = sqliteTable("app_config", {
 });
 
 /** Berkas kode TSX/TS/Python yang ditulis agen ke ./storage/artifacts/. */
-export const artifacts = sqliteTable("artifacts", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id").references(() => sessions.id, {
-    onDelete: "set null",
-  }),
-  filename: text("filename").notNull(),
-  language: text("language").notNull().default("tsx"),
-  sourceCode: text("source_code").notNull().default(""),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const artifacts = sqliteTable(
+  "artifacts",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    filename: text("filename").notNull(),
+    language: text("language").notNull().default("tsx"),
+    sourceCode: text("source_code").notNull().default(""),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("artifacts_session_id_idx").on(t.sessionId)]
+);
 
 /** Pemetaan embedding teks untuk pencarian semantik lokal (in-process cosine). */
-export const vectorMetadata = sqliteTable("vector_metadata", {
-  id: text("id").primaryKey(),
-  text: text("text").notNull(),
-  embeddingJson: text("embedding_json").notNull(),
-  dim: integer("dim").notNull(),
-  source: text("source"),
-  createdAt: integer("created_at").notNull(),
-});
+export const vectorMetadata = sqliteTable(
+  "vector_metadata",
+  {
+    id: text("id").primaryKey(),
+    text: text("text").notNull(),
+    embeddingJson: text("embedding_json").notNull(),
+    dim: integer("dim").notNull(),
+    source: text("source"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("vector_metadata_source_idx").on(t.source)]
+);
 
 /** Persetujuan user untuk perintah berbahaya (approval gate). */
-export const approvals = sqliteTable("approvals", {
-  id: text("id").primaryKey(),
-  runId: text("run_id").references(() => agentRuns.id, { onDelete: "cascade" }),
-  sessionId: text("session_id").references(() => sessions.id, {
-    onDelete: "cascade",
-  }),
-  toolName: text("tool_name").notNull(),
-  command: text("command").notNull(),
-  argsJson: text("args_json").notNull().default("{}"),
-  reason: text("reason").notNull(),
-  status: text("status", {
-    enum: ["pending", "approved", "rejected", "expired"],
-  })
-    .notNull()
-    .default("pending"),
-  createdAt: integer("created_at").notNull(),
-  decidedAt: integer("decided_at"),
-});
+export const approvals = sqliteTable(
+  "approvals",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").references(() => agentRuns.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "cascade",
+    }),
+    toolName: text("tool_name").notNull(),
+    command: text("command").notNull(),
+    argsJson: text("args_json").notNull().default("{}"),
+    reason: text("reason").notNull(),
+    status: text("status", {
+      enum: ["pending", "approved", "rejected", "expired"],
+    })
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at").notNull(),
+    decidedAt: integer("decided_at"),
+  },
+  (t) => [
+    index("approvals_run_id_idx").on(t.runId),
+    index("approvals_session_id_idx").on(t.sessionId),
+    index("approvals_status_idx").on(t.status),
+  ]
+);
 
 export type Session = typeof sessions.$inferSelect;
 export type Message = typeof messages.$inferSelect;

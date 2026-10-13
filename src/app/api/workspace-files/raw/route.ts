@@ -37,6 +37,11 @@ export async function GET(req: NextRequest) {
         "Content-Type": mimeForFile(rel),
         "Content-Disposition": `inline; filename="${encodeURIComponent(path.basename(rel))}"`,
         "Content-Length": String(st.size),
+        // File workspace adalah konten user yang tidak tepercaya: sandboxed
+        // (tanpa allow-scripts/allow-same-origin) supaya HTML/SVG yang
+        // dibuka tidak bisa mengeksekusi JS di origin XGOLDA / memanggil API.
+        "Content-Security-Policy": "sandbox",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

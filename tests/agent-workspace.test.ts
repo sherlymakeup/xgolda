@@ -141,3 +141,21 @@ describe("history persisten (tidak hilang/duplikat)", () => {
     await db.delete(sessions).where(eq(sessions.id, sid));
   });
 });
+
+describe("summarizeToolHistory", () => {
+  it("batas total 12000 karakter + delimiter tool-output, entri lama dipotong", async () => {
+    const { summarizeToolHistory } = await import("../src/lib/agent/context.ts");
+    const execs = Array.from({ length: 30 }, (_, i) => ({
+      toolName: "web_fetch",
+      argsJson: JSON.stringify({ url: `https://example.com/${i}` }),
+      resultJson: JSON.stringify({ ok: true, output: "x".repeat(1400) }),
+      ok: true,
+    }));
+    const out = summarizeToolHistory(execs);
+    assert.ok(out.length <= 13000, `kepanjangan: ${out.length}`);
+    assert.match(out, /<tool-output>/);
+    assert.match(out, /dipotong/);
+    assert.ok(out.includes("[30] web_fetch"), "entri terbaru dipertahankan");
+    assert.ok(!out.includes("[1] web_fetch"), "entri terlama dibuang");
+  });
+});

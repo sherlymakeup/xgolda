@@ -177,9 +177,12 @@ async function terminalExec(
 
   // cwd di-jail ke folder workspace sesi: default = folder sesi,
   // override hanya boleh relatif di dalamnya (absolute ke luar ditolak).
-  const base = ctx.sessionId
-    ? await getSessionWorkspace(ctx.sessionId)
-    : ensureArtifactsDir();
+  // Subagen pakai ctx.workspaceDir (subfolder .delegates).
+  const base = ctx.workspaceDir
+    ? ctx.workspaceDir
+    : ctx.sessionId
+      ? await getSessionWorkspace(ctx.sessionId)
+      : ensureArtifactsDir();
   const rawCwd = arg(args.cwd, "");
   const cwd = rawCwd ? path.resolve(base, rawCwd) : base;
   if (!isInside(base, cwd)) {
@@ -206,6 +209,55 @@ async function terminalExec(
           `Pakai path RELATIF terhadap folder sesi (mis. "test.md"), bukan path absolut.`,
       };
     }
+  }
+  // JAIL JUGA BENTUK RELATIF: `..`, `~`, dan `$env:`/`${env:}`/`$HOME` bisa
+  // keluar dari folder sesi TANPA path absolut literal — sebelumnya lolos
+  // (mis. `Set-Content ..\..\pwned.txt`, `cd $env:USERPROFILE`).
+  // `..` diblok bila berdiri sebagai komponen path (bukan `a..b` / range git).
+  if (/(^|[\s"'`();,|&])\.\.(?=[\\/]|$|[\s"'`();,|&])/.test(command)) {
+    return {
+      ok: false,
+      output:
+        `ERROR: ACCESS_DENIED: perintah mengandung ".." (naik folder) — dilarang, bisa keluar dari folder workspace sesi.\n` +
+        `Folder sesi: ${base}\nPakai path relatif di dalam folder sesi saja.`,
+    };
+  }
+  // `~` (home dir) sebagai komponen path.
+  if (/(^|[\s"'`();,|&=])~(?=[\\/]|$|[\s"'`();,|&=]|[A-Za-z])/.test(command)) {
+    return {
+      ok: false,
+      output:
+        `ERROR: ACCESS_DENIED: perintah mengandung "~" (home directory) — dilarang, keluar dari folder workspace sesi.\n` +
+        `Folder sesi: ${base}\nPakai path relatif di dalam folder sesi saja.`,
+    };
+  }
+  // Variabel env yang menunjuk ke luar workspace ($env:USERPROFILE, $HOME, ...).
+  // Bentuk: $env:VAR, ${env:VAR}, $VAR (bash/PowerShell: $HOME).
+  const PATH_ENV_VARS = new Set([
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "SYSTEMDRIVE", "SYSTEMROOT",
+    "WINDIR", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA", "APPDATA",
+    "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "PUBLIC", "ONEDRIVE",
+    "ONEDRIVECOMMERCIAL", "HOMESHARE", "ALLUSERSPROFILE",
+    "COMMONPROGRAMFILES", "PSMODULEPATH", "COMSPEC", "HOME",
+  ]);
+  const envHits = new Set<string>();
+  const envRe = /\$\{?env:([A-Za-z_][A-Za-z0-9_()]*)\}?/gi;
+  let em: RegExpExecArray | null;
+  while ((em = envRe.exec(command)) !== null) {
+    const v = (em[1] || "").toUpperCase();
+    if (PATH_ENV_VARS.has(v)) envHits.add(em[0]);
+  }
+  const homeRe = /\$(HOME|TMPDIR|TEMP|TMP)\b/gi;
+  while ((em = homeRe.exec(command)) !== null) {
+    envHits.add(em[0]);
+  }
+  if (envHits.size > 0) {
+    return {
+      ok: false,
+      output:
+        `ERROR: ACCESS_DENIED: perintah memakai variabel env yang menunjuk ke luar folder workspace: ${Array.from(envHits).join(", ")}\n` +
+        `Folder sesi: ${base}\nPakai path relatif di dalam folder sesi saja.`,
+    };
   }
 
   const started = Date.now();

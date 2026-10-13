@@ -15,14 +15,12 @@ import { appConfig } from "../db/schema.ts";
 /** Key yang boleh diubah via UI. */
 export const EDITABLE_CONFIG_KEYS = [
   "DEFAULT_MODEL",
-  "INTERNAL_INFERENCE_ENDPOINT",
   "EMBEDDING_MODEL",
   "WEB_SEARCH_MODEL",
   "WEB_FETCH_MODEL",
   "IMAGE_MODEL",
   "TTS_MODEL",
   "AGENT_MAX_STEPS",
-  "AGENT_WORKSPACE_ROOT",
   "AGENT_MAX_DEPTH",
   "AGENT_CRITIC_ENABLED",
   "AGENT_PERSONA",
@@ -32,7 +30,23 @@ export const EDITABLE_CONFIG_KEYS = [
   "AI_RETRY_BASE_MS",
 ] as const;
 
-export type ConfigKey = (typeof EDITABLE_CONFIG_KEYS)[number];
+/**
+ * Key env-only — TIDAK bisa diubah via UI/API. INTERNAL_INFERENCE_ENDPOINT
+ * menentukan ke mana token gateway dikirim (belokkan = token bocor) dan
+ * AGENT_WORKSPACE_ROOT menentukan jail agen (pindah = jail pindah). Keduanya
+ * hanya dari .env/default. Override DB lama untuk key ini diabaikan.
+ */
+export const ENV_ONLY_CONFIG_KEYS = [
+  "INTERNAL_INFERENCE_ENDPOINT",
+  "AGENT_WORKSPACE_ROOT",
+] as const;
+
+export const ALL_CONFIG_KEYS = [
+  ...EDITABLE_CONFIG_KEYS,
+  ...ENV_ONLY_CONFIG_KEYS,
+] as const;
+
+export type ConfigKey = (typeof ALL_CONFIG_KEYS)[number];
 
 const DEFAULTS: Record<ConfigKey, string> = {
   DEFAULT_MODEL: "deepseek-ai/DeepSeek-R1",
@@ -96,8 +110,10 @@ export async function getConfig(): Promise<ResolvedConfig> {
   const fromEnv = envMap();
   const values = {} as Record<ConfigKey, string>;
   const sources = {} as Record<ConfigKey, ConfigSource>;
-  for (const k of EDITABLE_CONFIG_KEYS) {
-    if (overrides[k] !== undefined && overrides[k] !== "") {
+  for (const k of ALL_CONFIG_KEYS) {
+    // Override DB hanya berlaku untuk key yang bisa diedit via UI — override
+    // lama untuk key env-only (mis. endpoint lama) diabaikan total.
+    if (isEditableKey(k) && overrides[k] !== undefined && overrides[k] !== "") {
       values[k] = overrides[k];
       sources[k] = "ui";
     } else if (fromEnv[k] !== undefined && fromEnv[k] !== "") {

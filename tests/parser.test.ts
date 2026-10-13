@@ -87,4 +87,14 @@ describe("extractToolCalls", () => {
     assert.equal(calls.length, 0);
     assert.equal(cleaned, "halo dunia");
   });
+
+  it("toolcall tanpa penutup = malformed, ekor JSON tidak jadi jawaban", () => {
+    const { calls, cleaned, malformed } = extractToolCalls(
+      'Baik <toolcall>{"name": "fs_write_artifact", "args": {"filename": "x.md"'
+    );
+    assert.equal(calls.length, 0);
+    assert.equal(malformed, 1);
+    assert.equal(cleaned, "Baik");
+    assert.ok(!cleaned.includes("fs_write_artifact"));
+  });
 });

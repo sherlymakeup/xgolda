@@ -110,7 +110,10 @@ export function verifyFinalAnswer(draft: string, ev: VerifiedEvidence): string {
 
   // Kasus 2: klaim gagal (draf pendek, tanpa substansi) tapi bukti
   // menunjukkan pekerjaan berhasil → ganti dengan laporan fakta.
-  if (claimsFailure && draft.length < SHORT_DRAFT && hasSuccess) {
+  // HANYA bila tidak ada kegagalan tool sama sekali — bila ada tool yang
+  // gagal, draf dibiarkan (klaim gagal bisa jadi jujur, mis. system_info
+  // sukses tapi fs_write_artifact gagal).
+  if (claimsFailure && draft.length < SHORT_DRAFT && hasSuccess && ev.failed.length === 0) {
     const files =
       ev.written.length > 0 ? ` File dibuat: ${ev.written.join(", ")}.` : "";
     const tools =

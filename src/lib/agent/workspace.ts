@@ -36,7 +36,23 @@ export async function getSessionWorkspace(sessionId: string): Promise<string> {
   return dir;
 }
 
-/** Cek apakah `target` berada di dalam `base` (case-insensitive, Windows-safe). */
+/**
+ * Jail path berbasis folder absolut (untuk workspace override subagen).
+ * Sama seperti assertWorkspacePath, tapi base dir-nya eksplisit.
+ */
+export async function assertWorkspaceDirPath(
+  dir: string,
+  filename: string
+): Promise<string> {
+  if (!filename || typeof filename !== "string") {
+    throw new Error("ACCESS_DENIED: nama file tidak valid");
+  }
+  const target = path.resolve(dir, filename);
+  if (!isInside(dir, target)) {
+    throw new Error("ACCESS_DENIED: di luar folder workspace sesi ini");
+  }
+  return target;
+}
 export function isInside(base: string, target: string): boolean {
   const b = path.resolve(base).toLowerCase();
   const t = path.resolve(target).toLowerCase();

@@ -5,6 +5,10 @@ export interface ToolContext {
   depth?: number;
   /** Model yang dipakai run ini (untuk subagent). */
   model?: string;
+  /** Sinyal pembatalan run (timeout delegate / pembatalan induk). */
+  signal?: AbortSignal;
+  /** Folder workspace run ini (subagen: subfolder .delegates/<subRunId>). */
+  workspaceDir?: string;
 }
 
 export interface ToolResult {

@@ -12,6 +12,7 @@ import { getConfig, type ConfigKey } from "../config.ts";
 import { env } from "../env.ts";
 import { getSessionWorkspace } from "../agent/workspace.ts";
 import { assertSafePath, ensureArtifactsDir } from "../security/path-jail.ts";
+import { toGatewayError } from "../security/sanitization.ts";
 
 export interface GatewayCall {
   path: string;
@@ -50,11 +51,14 @@ export async function gatewayPost(call: GatewayCall): Promise<GatewayResult> {
     });
     const buf = Buffer.from(await res.arrayBuffer());
     if (!res.ok) {
-      return {
-        ok: false,
-        status: res.status,
-        error: `Gateway HTTP ${res.status}: ${buf.toString("utf8").slice(0, 300)}`,
-      };
+      // Zero-leak: body error mentah gateway (bisa berisi nama provider /
+      // detail internal) TIDAK boleh mengalir ke output tool → model →
+      // jawaban user. toGatewayError mengembalikan pesan generik dan
+      // me-log body mentah (tersamar) hanya server-side.
+      const gw = toGatewayError(
+        `Gateway HTTP ${res.status}: ${buf.toString("utf8").slice(0, 300)}`
+      );
+      return { ok: false, status: res.status, error: `${gw.error} (HTTP ${res.status})` };
     }
     let json: any = null;
     try {

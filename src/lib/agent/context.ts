@@ -89,15 +89,30 @@ export async function buildChatContext(
   return [{ role: "system", content: systemPrompt }, ...chatMessages];
 }
 
+/** Batas total karakter ringkasan history di prompt langkah (bukan cuma per-entri). */
+const MAX_HISTORY_CHARS = 12000;
+
 /** Ringkas riwayat eksekusi tool menjadi teks untuk prompt langkah agen. */
 export function summarizeToolHistory(
   executions: { toolName: string; argsJson: string; resultJson: string; ok: boolean }[]
 ): string {
   if (executions.length === 0) return "";
-  return executions
-    .map((e, i) => {
-      const out = e.resultJson.slice(0, 1500);
-      return `[${i + 1}] ${e.toolName}(${e.argsJson.slice(0, 300)}) => ${e.ok ? "OK" : "GAGAL"}\n${out}`;
-    })
-    .join("\n\n");
+  const parts = executions.map((e, i) => {
+    const out = e.resultJson.slice(0, 1500);
+    // Output tool dibungkus delimiter eksplisit: isinya DATA tak tepercaya,
+    // bukan instruksi (anti prompt injection — lihat aturan 11 system prompt).
+    return `[${i + 1}] ${e.toolName}(${e.argsJson.slice(0, 300)}) => ${e.ok ? "OK" : "GAGAL"}\n<tool-output>\n${out}\n</tool-output>`;
+  });
+  // Potong entri TERLAMA dulu sampai dalam budget (paling baru dipertahankan).
+  let total = parts.reduce((s, p) => s + p.length, 0);
+  let start = 0;
+  while (total > MAX_HISTORY_CHARS && start < parts.length - 1) {
+    total -= parts[start].length;
+    start++;
+  }
+  const kept = parts.slice(start);
+  return (
+    (start > 0 ? `[... ${start} entri tool awal dipotong agar prompt tetap ringkas ...]\n\n` : "") +
+    kept.join("\n\n")
+  );
 }

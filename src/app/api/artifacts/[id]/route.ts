@@ -44,50 +44,9 @@ export async function GET(
   });
 }
 
-/** PUT /api/artifacts/[id] — update source (DB + file). Body: { sourceCode, filename? } */
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { db, row } = await find(params.id);
-  if (!row) return Response.json({ error: "Tidak ditemukan" }, { status: 404 });
-
-  let body: { sourceCode?: string; filename?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "Body JSON tidak valid" }, { status: 400 });
-  }
-  const filename = (body.filename || row.filename).trim();
-  const sourceCode = body.sourceCode ?? row.sourceCode;
-  const renamed = filename !== row.filename;
-
-  try {
-    const target = assertSafePath(filename);
-    fs.writeFileSync(target, sourceCode, "utf8");
-    // S-07: bila rename, hapus file lama agar tidak jadi yatim di disk
-    if (renamed) {
-      try {
-        const oldTarget = assertSafePath(row.filename);
-        if (oldTarget !== target && fs.existsSync(oldTarget)) {
-          fs.unlinkSync(oldTarget);
-        }
-      } catch {
-        /* abaikan — file lama tidak kritis */
-      }
-    }
-  } catch (e) {
-    return Response.json(
-      { error: e instanceof Error ? e.message : "Path tidak valid" },
-      { status: 400 }
-    );
-  }
-  await db
-    .update(artifacts)
-    .set({ filename, sourceCode, updatedAt: Date.now() })
-    .where(eq(artifacts.id, params.id));
-  return Response.json({ ok: true });
-}
+/** PUT dihapus (2026-10-13): tidak ada pemanggil di codebase, dan menulis
+ * sourceCode sebagai UTF-8 bisa merusak artifact biner (mp3/png).
+ * Update artifact lewat POST /api/artifacts (buat baru) atau tool agen. */
 
 /** DELETE /api/artifacts/[id] — hapus DB + file. */
 export async function DELETE(

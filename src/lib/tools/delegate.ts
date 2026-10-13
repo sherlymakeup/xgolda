@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db/index.ts";
@@ -11,9 +13,13 @@ import { arg } from "./types.ts";
  * delegate_task — spawn subagent untuk mengerjakan subtugas secara otonom.
  *
  * - Berbagi sessionId (dan folder workspace sesi) dengan run induk.
+ * - Workspace DIPARTISI: subagen menulis ke <workspace>/.delegates/<subRunId>/
+ *   supaya delegate paralel tidak saling timpa file output (last-writer-wins).
+ *   Induk bisa membaca hasil dari subfolder itu (masih di dalam jail sesi).
  * - Depth-limited: kedalaman maksimal dari AGENT_MAX_DEPTH (default 2).
  * - Budget langkah subagent = setengah dari induk (min 3).
- * - Timeout 6 menit: bila subagent belum selesai, kembalikan progres parsial.
+ * - Timeout 6 menit: sinyal abort membatalkan loop subagen (hard-cancel,
+ *   bukan Promise.race yang dilepas — subagen yatim tidak lagi terus jalan).
  * - Beberapa delegate_task dalam SATU langkah dijalankan PARALEL oleh engine.
  */
 async function delegateTask(
@@ -55,29 +61,48 @@ async function delegateTask(
 
   const DELEGATE_TIMEOUT_MS = 6 * 60 * 1000;
   let timedOut = false;
+  // Sinyal pembatalan gabungan: timeout delegate + pembatalan run induk.
+  const abortCtrl = new AbortController();
+  const timer = setTimeout(() => {
+    timedOut = true;
+    abortCtrl.abort();
+  }, DELEGATE_TIMEOUT_MS);
+  timer.unref?.();
+  const onParentAbort = () => abortCtrl.abort();
+  ctx.signal?.addEventListener("abort", onParentAbort);
+  // Partisi workspace: subagen menulis ke subfolder sendiri
+  let subWorkspaceDir: string | undefined;
   try {
-    await Promise.race([
-      runAgentLoop({
-        runId: subRunId,
-        goal,
-        sessionId: ctx.sessionId,
-        model: ctx.model,
-        depth: depth + 1,
-        parentRunId: ctx.runId,
-        maxSteps: subMaxSteps,
-      }),
-      new Promise<void>((resolve) =>
-        setTimeout(() => {
-          timedOut = true;
-          resolve();
-        }, DELEGATE_TIMEOUT_MS)
-      ),
-    ]);
+    if (ctx.sessionId) {
+      const { getSessionWorkspace } = await import("../agent/workspace.ts");
+      const parentDir = ctx.workspaceDir || (await getSessionWorkspace(ctx.sessionId));
+      subWorkspaceDir = path.join(parentDir, ".delegates", subRunId);
+      fs.mkdirSync(subWorkspaceDir, { recursive: true });
+    }
+  } catch {
+    /* gagal partisi bukan fatal — subagen pakai workspace sesi */
+    subWorkspaceDir = undefined;
+  }
+  try {
+    await runAgentLoop({
+      runId: subRunId,
+      goal,
+      sessionId: ctx.sessionId,
+      model: ctx.model,
+      depth: depth + 1,
+      parentRunId: ctx.runId,
+      maxSteps: subMaxSteps,
+      signal: abortCtrl.signal,
+      workspaceDir: subWorkspaceDir,
+    });
   } catch (e) {
     return {
       ok: false,
       output: `ERROR: subagent gagal: ${e instanceof Error ? e.message : String(e)}`,
     };
+  } finally {
+    clearTimeout(timer);
+    ctx.signal?.removeEventListener("abort", onParentAbort);
   }
 
   // Baca hasil subagent dari DB (final atau parsial)
@@ -92,13 +117,17 @@ async function delegateTask(
   const head = timedOut
     ? `Subagent TIMEOUT setelah 6 menit (status: ${status}). Progres parsial:\n`
     : `Subagent selesai (status: ${status}).\n`;
+  const folderNote = subWorkspaceDir
+    ? `\n(File hasil subagen, bila ada, ada di .delegates/${subRunId}/ — baca dari sana, jangan asumsikan nama file di root workspace.)`
+    : "";
   return {
     ok: status === "completed",
     output:
       head +
       (answer
         ? `Hasil:\n${answer}`
-        : "(tidak ada jawaban final — cek langkah tool di status run)"),
+        : "(tidak ada jawaban final — cek langkah tool di status run)") +
+      folderNote,
   };
 }
 

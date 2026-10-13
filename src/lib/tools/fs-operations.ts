@@ -6,6 +6,7 @@ import {
   ensureArtifactsDir,
 } from "../security/path-jail.ts";
 import {
+  assertWorkspaceDirPath,
   assertWorkspacePath,
   getSessionWorkspace,
 } from "../agent/workspace.ts";
@@ -14,6 +15,7 @@ import { arg } from "./types.ts";
 
 /**
  * Tentukan base dir tool file:
+ * - Bila ada ctx.workspaceDir (subagen: subfolder .delegates) → pakai itu.
  * - Bila ada ctx.sessionId → folder workspace sesi itu (di-jail).
  * - Fallback (tanpa sesi) → ./storage/artifacts/ seperti dulu.
  */
@@ -22,6 +24,14 @@ async function resolveBase(ctx: ToolContext): Promise<{
   jail: (filename: string) => Promise<string>;
   label: string;
 }> {
+  if (ctx.workspaceDir) {
+    const dir = ctx.workspaceDir;
+    return {
+      dir,
+      jail: (f) => assertWorkspaceDirPath(dir, f),
+      label: "workspace subagen",
+    };
+  }
   if (ctx.sessionId) {
     const sid = ctx.sessionId;
     const dir = await getSessionWorkspace(sid);

@@ -45,6 +45,19 @@ describe("sqlite_query — read-only enforcement (S-01/S-02)", () => {
     assert.equal(r.ok, false);
   });
 
+  it("PRAGMA journal_mode(WAL) ditolak (bentuk fungsi = tulis)", async () => {
+    const r = await sqliteQueryTool.handler(
+      { sql: "PRAGMA journal_mode(WAL)" },
+      {}
+    );
+    assert.equal(r.ok, false);
+  });
+
+  it("ANALYZE ditolak (menulis sqlite_stat*)", async () => {
+    const r = await sqliteQueryTool.handler({ sql: "ANALYZE" }, {});
+    assert.equal(r.ok, false);
+  });
+
   it("PRAGMA baca diizinkan", async () => {
     const r = await sqliteQueryTool.handler(
       { sql: "PRAGMA table_info(sessions)" },

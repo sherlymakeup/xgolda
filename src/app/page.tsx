@@ -15,6 +15,7 @@ import SettingsPage from "@/components/settings/SettingsPage";
 import ConfigPage from "@/components/config/ConfigPage";
 import {
   deleteSession,
+  getAgentStatus,
   getSession,
   listSessions,
   startAgentRun,
@@ -27,6 +28,7 @@ interface ActiveRun {
   runId: string;
   goal: string;
   createdAt: number;
+  sessionId?: string;
 }
 
 export default function Home() {
@@ -34,6 +36,14 @@ export default function Home() {
   const [activeId, setActiveId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [runs, setRuns] = useState<ActiveRun[]>([]);
+  // Run yang panelnya ditutup sebelum selesai — tetap diawasi di level
+  // halaman agar jawaban final tetap muncul tanpa reload manual.
+  const [watchRuns, setWatchRuns] = useState<ActiveRun[]>([]);
+  const activeIdRef = useRef<string | undefined>(undefined);
+  activeIdRef.current = activeId;
+  // Satu janji pembuatan sesi — double-send cepat berbagi janji yang sama,
+  // bukan membuat dua sesi berbeda.
+  const sessionCreatingRef = useRef<Promise<string> | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioKey, setStudioKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -108,9 +118,33 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshSessions]);
 
+  // Pengawas run tanpa panel: poll status tiap 2 detik; bila selesai,
+  // muat ulang pesan sesi itu (jawaban final tersimpan persisten).
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, runs]);
+    if (watchRuns.length === 0) return;
+    const t = setInterval(async () => {
+      for (const w of watchRuns) {
+        try {
+          const s = await getAgentStatus(w.runId);
+          if (s.run.status === "completed" || s.run.status === "failed") {
+            setWatchRuns((list) => list.filter((x) => x.runId !== w.runId));
+            if (w.sessionId) {
+              getSession(w.sessionId)
+                .then(({ messages }) => {
+                  // Hanya timpa bila user masih di sesi itu
+                  if (activeIdRef.current === w.sessionId) setMessages(messages);
+                })
+                .catch(() => {});
+              refreshSessions();
+            }
+          }
+        } catch {
+          /* abaikan — coba lagi di tick berikutnya */
+        }
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [watchRuns, refreshSessions]);
 
   /** Sinkron URL ?thread=<id> dua arah (bookmarkable, refresh tidak nyasar). */
   const syncThreadUrl = (id?: string) => {
@@ -127,6 +161,7 @@ export default function Home() {
       setActiveId(id);
       setMessages(messages);
       setRuns([]);
+      setWatchRuns([]);
       setError("");
       setView("workspace");
       setSidebarOpen(false);
@@ -140,6 +175,7 @@ export default function Home() {
     setActiveId(undefined);
     setMessages([]);
     setRuns([]);
+    setWatchRuns([]);
     setError("");
     setView("workspace");
     setSidebarOpen(false);
@@ -152,6 +188,15 @@ export default function Home() {
   };
 
   const handleDelete = async (id: string) => {
+    const target = sessions.find((s) => s.id === id);
+    const name = target?.title || "sesi ini";
+    if (
+      !window.confirm(
+        `Hapus "${name}" beserta folder workspace, memori, dan run-nya? Tidak bisa dibatalkan.`
+      )
+    ) {
+      return;
+    }
     await deleteSession(id);
     if (id === activeId) newChat();
     refreshSessions();
@@ -169,25 +214,37 @@ export default function Home() {
     const goal = text || "Analisis gambar terlampir dan jelaskan isinya.";
     // Mode agen otonom: tampilkan panel, polling status
     try {
-      // Pastikan selalu ada sesi — jawaban final butuh sessionId agar tersimpan
+      // Pastikan selalu ada sesi — jawaban final butuh sessionId agar tersimpan.
+      // Double-send cepat (Enter 2x) berbagi SATU janji pembuatan sesi,
+      // bukan membuat dua sesi berbeda.
       let sid = activeId;
       if (!sid) {
-        const r = await fetch("/api/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: text.slice(0, 60) || "Percakapan baru",
-          }),
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || "Gagal membuat sesi");
-        sid = j.id;
+        if (!sessionCreatingRef.current) {
+          sessionCreatingRef.current = (async () => {
+            const r = await fetch("/api/sessions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: text.slice(0, 60) || "Percakapan baru",
+              }),
+            });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || "Gagal membuat sesi");
+            return j.id as string;
+          })();
+          // Gagal → bersihkan janji agar percobaan berikutnya bisa retry.
+          sessionCreatingRef.current.catch(() => {
+            sessionCreatingRef.current = null;
+          });
+        }
+        sid = await sessionCreatingRef.current;
+        sessionCreatingRef.current = null;
         setActiveId(sid);
         refreshSessions();
       }
       syncThreadUrl(sid);
-      const { runId } = await startAgentRun(goal, sid, opts.model, text);
-      setRuns((r) => [...r, { runId, goal: text, createdAt: Date.now() }]);
+      const { runId } = await startAgentRun(goal, sid, opts.model, text, attachments.map((a) => ({ id: a.id })));
+      setRuns((r) => [...r, { runId, goal: text, createdAt: Date.now(), sessionId: sid }]);
       // Tampilkan pesan user langsung; jawaban final dimuat ulang saat run selesai
       setMessages((m) => [
         ...m,
@@ -358,11 +415,20 @@ export default function Home() {
                             <AgentPanel
                               key={item.key}
                               runId={item.run.runId}
-                              onClose={() =>
+                              onClose={() => {
+                                // Panel ditutup sebelum run selesai → pindah
+                                // ke daftar pantauan halaman (jawaban final
+                                // tetap muncul tanpa reload manual).
+                                const closed = item.run;
                                 setRuns((list) =>
-                                  list.filter((x) => x.runId !== item.run.runId)
-                                )
-                              }
+                                  list.filter((x) => x.runId !== closed.runId)
+                                );
+                                setWatchRuns((list) =>
+                                  list.some((x) => x.runId === closed.runId)
+                                    ? list
+                                    : [...list, closed]
+                                );
+                              }}
                               onDone={() => {
                                 // Run selesai: muat ulang pesan sesi agar jawaban final
                                 // tersimpan persisten (ditampilkan setelah reload)

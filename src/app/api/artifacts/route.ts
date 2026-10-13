@@ -44,6 +44,9 @@ export async function GET() {
 /**
  * POST /api/artifacts — simpan artifact baru (DB + file di ./storage/artifacts/).
  * Body: { filename, sourceCode, sessionId?, language? }
+ * Urutan: insert DB dulu → tulis file → bila tulis gagal, baris DB dihapus
+ * (kompensasi) supaya tidak ada file yatim / baris tanpa file. Nama duplikat
+ * ditolak (409) agar tidak menimpa artifact lain diam-diam.
  */
 export async function POST(req: NextRequest) {
   let body: {
@@ -62,6 +65,11 @@ export async function POST(req: NextRequest) {
   if (!filename) {
     return Response.json({ error: "filename wajib" }, { status: 400 });
   }
+  // Batas ukuran: artifact teks tanpa batas = pengisian disk dari satu POST.
+  const MAX_SOURCE_BYTES = 1 * 1024 * 1024;
+  if (Buffer.byteLength(sourceCode, "utf8") > MAX_SOURCE_BYTES) {
+    return Response.json({ error: "sourceCode maksimal 1MB" }, { status: 413 });
+  }
 
   let target: string;
   try {
@@ -73,19 +81,46 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  fs.writeFileSync(target, sourceCode, "utf8");
 
   const db = getDb();
   const id = nanoid();
   const now = Date.now();
-  await db.insert(artifacts).values({
-    id,
-    sessionId: body.sessionId,
-    filename,
-    language: body.language || detectLanguage(filename),
-    sourceCode,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const dup = await db
+    .select({ id: artifacts.id })
+    .from(artifacts)
+    .where(eq(artifacts.filename, filename))
+    .limit(1);
+  if (dup.length > 0) {
+    return Response.json(
+      { error: `filename sudah ada: ${filename} (pakai nama lain)` },
+      { status: 409 }
+    );
+  }
+  try {
+    await db.insert(artifacts).values({
+      id,
+      sessionId: body.sessionId,
+      filename,
+      language: body.language || detectLanguage(filename),
+      sourceCode,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch {
+    return Response.json(
+      { error: "Gagal menyimpan artifact (sessionId tidak valid?)" },
+      { status: 400 }
+    );
+  }
+  try {
+    fs.writeFileSync(target, sourceCode, "utf8");
+  } catch (e) {
+    // Kompensasi: file gagal ditulis → hapus baris DB agar tidak yatim.
+    await db.delete(artifacts).where(eq(artifacts.id, id));
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Gagal menulis file" },
+      { status: 500 }
+    );
+  }
   return Response.json({ id, filename }, { status: 201 });
 }

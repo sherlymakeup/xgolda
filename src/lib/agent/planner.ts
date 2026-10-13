@@ -29,7 +29,19 @@ export async function generatePlan(
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
-  const parsed = JSON.parse(cleaned);
+  // Model kadang membungkus JSON dengan prosa ("Berikut rencananya: [...]").
+  // Coba parse langsung, lalu fallback: ekstrak substring [ ... ].
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("[");
+    const end = cleaned.lastIndexOf("]");
+    if (start === -1 || end <= start) {
+      throw new Error("Planner: JSON array tidak ditemukan");
+    }
+    parsed = JSON.parse(cleaned.slice(start, end + 1));
+  }
   if (!Array.isArray(parsed)) throw new Error("Planner: bukan JSON array");
   return parsed.map((s, i) => ({
     step: typeof s.step === "number" ? s.step : i + 1,

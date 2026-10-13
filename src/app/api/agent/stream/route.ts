@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentRuns } from "@/db/schema";
-import { subscribeRun, type RunEvent } from "@/lib/agent/bus";
+import { subscribeRun, subscribeRunWithReplay, type RunEvent } from "@/lib/agent/bus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +46,9 @@ export async function GET(req: NextRequest) {
         controller.close();
         return;
       }
-      const unsub = subscribeRun(runId, send);
+      const { unsubscribe: unsub, buffered } = subscribeRunWithReplay(runId, send);
+      // Replay event yang sudah ter-emit sebelum subscribe (ack/plan/done)
+      for (const e of buffered) send(e);
       // Keepalive agar koneksi tidak diputus diam-diam
       const ping = setInterval(() => {
         try {
@@ -64,6 +66,11 @@ export async function GET(req: NextRequest) {
           /* abaikan */
         }
       };
+      // Bila run selesai di jeda antara baca DB dan subscribe, buffer
+      // berisi `done` — tutup stream setelah replay (mirip closer).
+      if (buffered.some((e) => e.type === "done")) {
+        setTimeout(cleanup, 500);
+      }
       req.signal.addEventListener("abort", cleanup);
       // Tutup otomatis saat run selesai (hemat koneksi)
       const closer = subscribeRun(runId, (e) => {

@@ -101,6 +101,18 @@ describe("Fase 3", () => {
     assert.doesNotMatch(out, /belum bisa dipastikan/);
   });
 
+  it("verifyFinalAnswer: klaim gagal DIBIARKAN bila ada tool yang gagal (kasus 2)", () => {
+    // system_info sukses + fs_write gagal + draf jujur "gagal" → jangan
+    // ditimpa jadi "Selesai" palsu.
+    const out = verifyFinalAnswer("Maaf, gagal menulis file.", {
+      written: [],
+      succeeded: ["system_info"],
+      failed: ["fs_write_artifact: ERROR: disk penuh"],
+    });
+    assert.match(out, /gagal menulis file/);
+    assert.doesNotMatch(out, /^Selesai/);
+  });
+
   it("verifyFinalAnswer: klaim file via terminal tapi ADA di disk → dibiarkan", () => {
     const out = verifyFinalAnswer(
       "Perintah terminal sudah dijalankan untuk: Membuat test.md, Membaca ulang isi file.",

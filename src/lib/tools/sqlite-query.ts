@@ -7,11 +7,13 @@ const MAX_ROWS = 200;
 // Kata kerja tulis — dilarang di SELURUH statement (bukan cuma kata pertama),
 // karena SQLite mendukung data-modifying CTE:
 //   WITH d AS (DELETE FROM messages RETURNING *) SELECT * FROM d;
-const FORBIDDEN = /\b(insert|update|delete|drop|alter|create|replace|attach|detach|vacuum|reindex|trigger)\b/i;
+const FORBIDDEN = /\b(insert|update|delete|drop|alter|create|replace|attach|detach|vacuum|reindex|trigger|analyze)\b/i;
 
-// PRAGMA baca-saja yang diizinkan (bentuk tulis seperti journal_mode=DELETE ditolak)
+// PRAGMA baca-saja yang diizinkan (bentuk tulis seperti journal_mode=DELETE ditolak).
+// journal_mode SENGAJA tidak ada: bentuk fungsi PRAGMA journal_mode(WAL) lolos
+// regex lama dan mengubah mode jurnal (tulis). ANALYZE juga dilarang (menulis sqlite_stat*).
 const SAFE_PRAGMA =
-  /^\s*pragma\s+(table_info|table_list|index_list|index_info|foreign_key_list|database_list|journal_mode|table_xinfo)\s*(\(\s*['"]?\w+['"]?\s*\))?\s*;?\s*$/i;
+  /^\s*pragma\s+(table_info|table_list|index_list|index_info|foreign_key_list|database_list|table_xinfo)\s*(\(\s*['"]?\w+['"]?\s*\))?\s*;?\s*$/i;
 
 const HAS_LIMIT = /\blimit\s+\d+\s*;?\s*$/i;
 

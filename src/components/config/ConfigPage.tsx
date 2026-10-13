@@ -21,6 +21,8 @@ interface RowDef {
   hint?: string;
   /** true → textarea multiline (untuk nilai panjang seperti persona). */
   long?: boolean;
+  /** true → hanya tampil, tidak bisa diubah dari UI (key env-only). */
+  readOnly?: boolean;
 }
 
 interface SectionDef {
@@ -36,7 +38,7 @@ const SECTIONS: SectionDef[] = [
     icon: Cpu,
     blurb: "Endpoint 9Router lokal & model per kemampuan.",
     rows: [
-      { key: "INTERNAL_INFERENCE_ENDPOINT", label: "Inference Endpoint", hint: "URL basis OpenAI-compatible 9Router di PC ini." },
+      { key: "INTERNAL_INFERENCE_ENDPOINT", label: "Inference Endpoint", hint: "URL basis OpenAI-compatible 9Router di PC ini. Hanya via .env.local (keamanan: menentukan ke mana token gateway dikirim).", readOnly: true },
       { key: "DEFAULT_MODEL", label: "Model Chat Default", hint: "Dipakai chat & agent bila tidak dipilih manual." },
       { key: "EMBEDDING_MODEL", label: "Model Embedding", hint: "Untuk vector search / memori semantik." },
       { key: "WEB_SEARCH_MODEL", label: "Model Web Search", hint: "Tool web_search agen." },
@@ -54,7 +56,7 @@ const SECTIONS: SectionDef[] = [
       { key: "AGENT_MAX_DEPTH", label: "Max Delegation Depth", hint: "Kedalaman maksimal subagent beranak (delegate_task). 0 = delegasi mati." },
       { key: "AGENT_CRITIC_ENABLED", label: "Verifikasi Jawaban", hint: "1 = verifikasi deterministik jawaban final terhadap bukti tool. 0 = mati." },
       { key: "AGENT_PERSONA", label: "Agent Persona", hint: "Gaya komunikasi agen (dimasukkan ke system prompt).", long: true },
-      { key: "AGENT_WORKSPACE_ROOT", label: "Agent Workspace Root", hint: "Folder kerja agen per thread: <root>/<thread-id>/. Agen di-jail di dalamnya." },
+      { key: "AGENT_WORKSPACE_ROOT", label: "Agent Workspace Root", hint: "Folder kerja agen per thread: <root>/<thread-id>/. Agen di-jail di dalamnya. Hanya via .env.local (keamanan: menentukan jail agen).", readOnly: true },
       { key: "EXECUTION_TIMEOUT_MS", label: "Execution Timeout (ms)", hint: "terminal_exec dibunuh otomatis melewati batas ini." },
       { key: "APPROVAL_TIMEOUT_MS", label: "Approval Timeout (ms)", hint: "Perintah berbahaya kedaluwarsa tanpa keputusan." },
     ],
@@ -255,7 +257,8 @@ export default function ConfigPage() {
                                 }
                                 spellCheck={false}
                                 rows={4}
-                                className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors resize-y"
+                                disabled={row.readOnly}
+                                className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors resize-y disabled:opacity-60"
                               />
                             ) : (
                               <input
@@ -267,9 +270,11 @@ export default function ConfigPage() {
                                   }))
                                 }
                                 spellCheck={false}
-                                className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors"
+                                disabled={row.readOnly}
+                                className="flex-1 min-w-0 font-mono text-xs bg-obsidian-900 border border-line-hair rounded-lg px-3 py-2.5 text-ink outline-none focus:border-signal/60 transition-colors disabled:opacity-60"
                               />
                             )}
+                            {!row.readOnly && (
                             <div className="flex gap-2 shrink-0">
                               <button
                                 onClick={() => save(row.key)}
@@ -295,6 +300,7 @@ export default function ConfigPage() {
                                 </button>
                               )}
                             </div>
+                            )}
                           </div>
                         </div>
                       );

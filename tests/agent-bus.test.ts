@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { emitRunEvent, subscribeRun, type RunEvent } from "../src/lib/agent/bus.ts";
+import { emitRunEvent, subscribeRun, subscribeRunWithReplay, type RunEvent } from "../src/lib/agent/bus.ts";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -38,6 +38,20 @@ describe("agent bus (SSE)", () => {
     assert.equal(got.length, 1);
     u1();
     u2();
+  });
+
+  it("subscribeRunWithReplay: subscriber telat tetap dapat event lama", () => {
+    emitRunEvent("run-replay", { type: "ack", text: "siap" });
+    emitRunEvent("run-replay", { type: "token", text: "x" });
+    const got: RunEvent[] = [];
+    const { unsubscribe, buffered } = subscribeRunWithReplay("run-replay", (e) => got.push(e));
+    assert.equal(buffered.length, 2);
+    assert.equal(buffered[0].type, "ack");
+    // Event live setelah subscribe tetap mengalir
+    emitRunEvent("run-replay", { type: "token", text: "y" });
+    assert.equal(got.length, 1);
+    assert.equal(got[0].type, "token");
+    unsubscribe();
   });
 });
 

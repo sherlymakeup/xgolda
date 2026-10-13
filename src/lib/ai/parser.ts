@@ -125,5 +125,15 @@ export function extractToolCalls(text: string): {
     }
   }
   const cleaned = text.replace(re, "").trim();
-  return { calls, cleaned, malformed };
+  // Blok <toolcall> TANPA penutup (output terpotong limit token / lupa tag)
+  // = malformed, bukan jawaban final. Ekornya dihapus dari cleaned supaya
+  // JSON mentah tidak terkirim ke user sebagai "jawaban".
+  let finalCleaned = cleaned;
+  const lastOpen = text.lastIndexOf("<toolcall>");
+  const lastClose = text.lastIndexOf("</toolcall>");
+  if (lastOpen > lastClose) {
+    malformed++;
+    finalCleaned = cleaned.replace(/<toolcall>[\s\S]*$/, "").trim();
+  }
+  return { calls, cleaned: finalCleaned, malformed };
 }

@@ -77,12 +77,13 @@ export async function startAgentRun(
   goal: string,
   sessionId?: string,
   model?: string,
-  userText?: string
+  userText?: string,
+  attachments?: { id: string }[]
 ): Promise<{ runId: string }> {
   const r = await fetch("/api/agent/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goal, sessionId, model, userText }),
+    body: JSON.stringify({ goal, sessionId, model, userText, attachments }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || "Gagal memulai agent");

@@ -101,9 +101,10 @@ export default function Omnibox({
   const removeAttachment = (id: string) =>
     setAttachments((a) => a.filter((x) => x.id !== id));
 
-  const canSubmit = text.trim() !== "" || attachments.length > 0;
+  const canSubmit = (text.trim() !== "" || attachments.length > 0) && !uploading;
 
   const submit = () => {
+    if (uploading) return; // jangan kirim saat upload gambar masih jalan
     const t = text.trim();
     if ((!t && attachments.length === 0)) return;
     // Semua pesan lewat agen (Chat = Agent default). Semua kemampuan aktif.
