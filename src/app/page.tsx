@@ -20,6 +20,7 @@ import {
   listSessions,
   startAgentRun,
   streamChatRequest,
+  type Attachment,
   type ChatMessage,
   type Session,
 } from "@/lib/client-api";
@@ -112,17 +113,18 @@ export default function Home() {
 
   const handleSend = async (
     text: string,
-    opts: { agentMode: boolean; model: string; mode: string }
+    opts: { agentMode: boolean; model: string; mode: string; attachments?: Attachment[] }
   ) => {
     setError("");
     setView("workspace");
+    const attachments = opts.attachments || [];
     // Safety net: SuggestionCards mem-bypass Omnibox, jadi deteksi juga di sini.
     const useAgent = opts.agentMode || looksLikeTask(text);
     // Mode web/code memaksa agent mode; web dapat instruksi riset via terminal
     const goal =
       opts.mode === "web"
         ? `Gunakan web (curl via terminal) bila perlu informasi terkini. ${text}`
-        : text;
+        : text || "Analisis gambar terlampir dan jelaskan isinya.";
     if (useAgent) {
       // Mode agen otonom: tampilkan panel, polling status
       try {
@@ -153,6 +155,7 @@ export default function Home() {
             role: "user",
             content: text,
             reasoningContent: "",
+            attachmentsJson: JSON.stringify(attachments.map((a) => ({ id: a.id }))),
             createdAt: Date.now(),
           },
         ]);
@@ -171,6 +174,7 @@ export default function Home() {
       role: "user",
       content: text,
       reasoningContent: "",
+      attachmentsJson: JSON.stringify(attachments.map((a) => ({ id: a.id }))),
       createdAt: Date.now(),
     };
     setMessages((m) => [...m, userMsg]);
@@ -187,7 +191,12 @@ export default function Home() {
 
     try {
       await streamChatRequest(
-        { sessionId: activeId, message: text, model: opts.model },
+        {
+          sessionId: activeId,
+          message: text,
+          model: opts.model,
+          attachments: attachments.map((a) => ({ id: a.id })),
+        },
         (e) => {
           if (e.type === "session") {
             finalSessionId = e.sessionId;

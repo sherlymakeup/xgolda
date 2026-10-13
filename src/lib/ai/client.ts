@@ -4,9 +4,13 @@ import { stripProviderNames } from "../security/sanitization.ts";
 import { ThinkStreamParser } from "./parser.ts";
 import { withRetry } from "./retry.ts";
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 }
 
 export type StreamEvent =

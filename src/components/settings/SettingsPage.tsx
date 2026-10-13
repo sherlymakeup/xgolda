@@ -1,6 +1,8 @@
 "use client";
 
-import { Bot, Cpu, Info, RefreshCw, type LucideIcon } from "lucide-react";
+import { Activity, Bot, Cpu, Info, RefreshCw, type LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { getGatewayStatus } from "@/lib/client-api";
 
 /* ------------------------------------------------------------------ */
 /* Nilai ASLI selalu dari /api/config (env server), bukan hardcode.    */
@@ -38,6 +40,114 @@ interface SettingsPageProps {
   /** Nilai asli dari env server (via /api/config). */
   model?: string;
   endpoint?: string;
+}
+
+const CAPABILITY_CARDS = [
+  { key: "chat", label: "Chat" },
+  { key: "image", label: "Image" },
+  { key: "tts", label: "TTS" },
+  { key: "embedding", label: "Embedding" },
+  { key: "web", label: "Web" },
+  { key: "stt", label: "STT" },
+  { key: "vision", label: "Vision" },
+] as const;
+
+interface GatewayStatus {
+  ok: boolean;
+  latencyMs?: number;
+  endpoint?: string;
+  models: Record<string, number>;
+}
+
+function GatewayStatusSection() {
+  const [gw, setGw] = useState<GatewayStatus | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    getGatewayStatus()
+      .then((s) => {
+        if (alive) setGw(s);
+      })
+      .catch((e) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <section className="rounded-2xl border border-line-hair bg-obsidian-950 px-5 md:px-6 py-2">
+      <div className="flex items-center gap-3 pt-4 pb-1">
+        <div className="w-9 h-9 rounded-xl bg-obsidian-800 border border-line-soft flex items-center justify-center shrink-0">
+          <Activity size={16} className="text-signal" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-semibold text-ink">Gateway Status</h2>
+          <p className="text-xs text-ink-faint mt-0.5">
+            Live reachability and model inventory of the 9Router gateway.
+          </p>
+        </div>
+        {!gw && !error && (
+          <span className="font-mono text-[11px] text-ink-faint flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-ink-faint animate-pulse" />
+            Checking gateway…
+          </span>
+        )}
+        {error && (
+          <span className="font-mono text-[11px] text-red-400 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+            Unreachable
+          </span>
+        )}
+        {gw && (
+          <span className="font-mono text-[11px] flex items-center gap-2 text-ink-mute">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                gw.ok ? "bg-green-400 shadow-pip-glow" : "bg-red-400"
+              }`}
+            />
+            {gw.ok ? "Online" : "Unreachable"}
+            {gw.latencyMs !== undefined && (
+              <span className="text-ink-faint">{gw.latencyMs} ms</span>
+            )}
+          </span>
+        )}
+      </div>
+
+      <div className="pb-4 pt-2">
+        {error && (
+          <p className="font-mono text-[11px] text-red-400/80 break-words">
+            {error}
+          </p>
+        )}
+        {gw?.endpoint && (
+          <p className="font-mono text-[11px] text-ink-faint truncate mb-3">
+            {gw.endpoint}
+          </p>
+        )}
+        {gw && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {CAPABILITY_CARDS.map((c) => (
+              <div
+                key={c.key}
+                className="rounded-xl border border-line-hair bg-obsidian-900 px-3 py-2.5"
+              >
+                <p className="font-mono text-[10px] tracking-widest text-ink-faint uppercase">
+                  {c.label}
+                </p>
+                <p className="font-mono text-lg text-signal mt-0.5">
+                  {gw.models[c.key] ?? 0}
+                </p>
+                <p className="font-mono text-[10px] text-ink-faint">models</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function SettingRowView({ row }: { row: SettingRow }) {
@@ -157,6 +267,7 @@ export default function SettingsPage({ model, endpoint }: SettingsPageProps) {
 
         {/* Sections */}
         <div className="mt-6 space-y-4">
+          <GatewayStatusSection />
           {SECTIONS.map((section) => {
             const Icon = section.icon;
             return (

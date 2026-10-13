@@ -21,6 +21,8 @@ export const messages = sqliteTable("messages", {
   content: text("content").notNull().default(""),
   reasoningContent: text("reasoning_content").notNull().default(""),
   toolName: text("tool_name"),
+  /** Lampiran gambar (vision): JSON [{id, mime}] → file di storage/uploads/ */
+  attachmentsJson: text("attachments_json").notNull().default("[]"),
   createdAt: integer("created_at").notNull(),
 });
 

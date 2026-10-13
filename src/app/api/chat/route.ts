@@ -16,6 +16,8 @@ interface ChatBody {
   message: string;
   model?: string;
   temperature?: number;
+  /** ID upload gambar (dari POST /api/uploads) — maks 4 per pesan. */
+  attachments?: { id: string }[];
 }
 
 function sse(data: unknown): string {
@@ -34,7 +36,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Body JSON tidak valid" }, { status: 400 });
   }
   const userText = (body.message || "").trim();
-  if (!userText) {
+  // Validasi lampiran: hanya ID nanoid valid, maks 4
+  const attachments = (Array.isArray(body.attachments) ? body.attachments : [])
+    .filter((a) => a && typeof a.id === "string" && /^[A-Za-z0-9_-]{8,32}$/.test(a.id))
+    .slice(0, 4)
+    .map((a) => ({ id: a.id }));
+  if (!userText && attachments.length === 0) {
     return Response.json({ error: "Pesan kosong" }, { status: 400 });
   }
 
@@ -75,6 +82,7 @@ export async function POST(req: NextRequest) {
     sessionId: sid,
     role: "user",
     content: userText,
+    attachmentsJson: JSON.stringify(attachments),
     createdAt: now,
   });
 

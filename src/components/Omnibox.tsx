@@ -1,14 +1,24 @@
 "use client";
 
-import { ArrowUp, Bot, Paperclip } from "lucide-react";
+import { ArrowUp, Bot, ChevronDown, Loader2, Paperclip, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ModePills from "./home/ModePills";
 import { looksLikeTask } from "@/lib/intent";
+import {
+  listGatewayModels,
+  uploadImage,
+  type Attachment,
+} from "@/lib/client-api";
 
 interface Props {
   onSend: (
     text: string,
-    opts: { agentMode: boolean; model: string; mode: string }
+    opts: {
+      agentMode: boolean;
+      model: string;
+      mode: string;
+      attachments?: Attachment[];
+    }
   ) => void;
   streaming: boolean;
   /** Nama model dari server (/api/config) — nilai env asli, bukan hardcode. */
@@ -37,10 +47,22 @@ export default function Omnibox({
   const [text, setText] = useState("");
   const [agentMode, setAgentMode] = useState(false);
   const [model, setModel] = useState("");
-  const [editingModel, setEditingModel] = useState(false);
+
+  // --- Model dropdown (daftar dinamis dari gateway) ---
+  const [modelOpen, setModelOpen] = useState(false);
+  const [models, setModels] = useState<{ id: string; owned_by: string }[] | null>(null);
+  const [modelFilter, setModelFilter] = useState("");
+  const [modelLoading, setModelLoading] = useState(false);
+  const [modelError, setModelError] = useState("");
+
+  // --- Lampiran gambar (vision) ---
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Sinkron sekali saat nama model asli tiba dari server;
-  // edit manual user setelah itu tidak ditimpa.
+  // pilihan manual user setelah itu tidak ditimpa.
   const syncedRef = useRef(false);
   useEffect(() => {
     if (defaultModel && !syncedRef.current) {
@@ -49,17 +71,77 @@ export default function Omnibox({
     }
   }, [defaultModel]);
 
+  const toggleModelDropdown = () => {
+    const next = !modelOpen;
+    setModelOpen(next);
+    if (next) setModelFilter("");
+    if (next && models === null && !modelLoading) {
+      setModelLoading(true);
+      setModelError("");
+      listGatewayModels("chat")
+        .then((list) => {
+          setModels(list);
+          setModelLoading(false);
+        })
+        .catch((e) => {
+          setModelError(e instanceof Error ? e.message : String(e));
+          setModelLoading(false);
+        });
+    }
+  };
+
+  const filteredModels = (models ?? []).filter((m) =>
+    m.id.toLowerCase().includes(modelFilter.trim().toLowerCase())
+  );
+
+  const pickFiles = () => fileRef.current?.click();
+
+  const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(
+      0,
+      Math.max(0, 4 - attachments.length)
+    );
+    e.target.value = "";
+    if (files.length === 0) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      for (const f of files) {
+        const r = await uploadImage(f);
+        setAttachments((a) =>
+          a.length < 4 ? [...a, { id: r.id, mime: r.mime }] : a
+        );
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAttachment = (id: string) =>
+    setAttachments((a) => a.filter((x) => x.id !== id));
+
+  const canSubmit = (text.trim() !== "" || attachments.length > 0) && !streaming;
+
   const submit = () => {
     const t = text.trim();
-    if (!t || streaming) return;
+    if ((!t && attachments.length === 0) || streaming) return;
     // Auto-route: perintah eksekusi langsung jadi agent task (toggle ikut nyala
     // sebagai penanda). Approval gate tetap berlaku untuk perintah berbahaya.
     const taskLike = looksLikeTask(t);
     if (taskLike) setAgentMode(true);
     const forceAgent =
       agentMode || taskLike || mode === "web" || mode === "code";
-    onSend(t, { agentMode: forceAgent, model: model || defaultModel, mode });
+    onSend(t, {
+      agentMode: forceAgent,
+      model: model || defaultModel,
+      mode,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    });
     setText("");
+    setAttachments([]);
+    setModelOpen(false);
   };
 
   const handleModeChange = (m: string) => {
@@ -76,6 +158,40 @@ export default function Omnibox({
             : "border-line-hair focus-within:border-line-mid"
         }`}
       >
+        {/* Attachment thumbnails */}
+        {(attachments.length > 0 || uploading || uploadError) && (
+          <div className="flex items-center gap-2 px-5 pt-3 flex-wrap">
+            {attachments.map((a) => (
+              <div
+                key={a.id}
+                className="relative w-16 h-16 rounded-lg overflow-hidden border border-line-soft shrink-0"
+              >
+                <img
+                  src={`/api/uploads/${a.id}/raw`}
+                  alt="attachment"
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  onClick={() => removeAttachment(a.id)}
+                  aria-label="Hapus lampiran"
+                  className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-void/80 border border-line-soft flex items-center justify-center text-ink-mute hover:text-ink transition-colors"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            {uploading && (
+              <span className="flex items-center gap-1.5 font-mono text-[11px] text-ink-faint">
+                <Loader2 size={12} className="animate-spin" /> uploading…
+              </span>
+            )}
+            {uploadError && (
+              <span className="font-mono text-[11px] text-red-400">
+                {uploadError}
+              </span>
+            )}
+          </div>
+        )}
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -98,25 +214,90 @@ export default function Omnibox({
           <ModePills mode={mode} onChange={handleModeChange} modelLabel={modelLabel} />
         </div>
         <div className="flex items-center gap-2 px-3 pb-3 pt-1">
-          {/* Model selector pill */}
-          {editingModel ? (
-            <input
-              autoFocus
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              onBlur={() => setEditingModel(false)}
-              onKeyDown={(e) => e.key === "Enter" && setEditingModel(false)}
-              className="font-mono text-[11px] bg-obsidian-850 border border-line-soft rounded-full px-3 py-1.5 outline-none w-52"
-            />
-          ) : (
+          {/* Model selector dropdown */}
+          <div className="relative">
             <button
-              onClick={() => setEditingModel(true)}
-              title="Klik untuk ubah model"
-              className="font-mono text-[11px] text-ink-mute border border-line-hair rounded-full px-3 py-1.5 hover:border-line-soft hover:text-ink transition-colors truncate max-w-52"
+              onClick={toggleModelDropdown}
+              title="Pilih model"
+              className={`flex items-center gap-1.5 font-mono text-[11px] border rounded-full px-3 py-1.5 transition-colors truncate max-w-52 ${
+                modelOpen
+                  ? "text-signal border-signal/60 bg-obsidian-850"
+                  : "text-ink-mute border-line-hair hover:border-line-soft hover:text-ink"
+              }`}
             >
-              {model || defaultModel || "…"}
+              <span className="truncate">{model || defaultModel || "…"}</span>
+              <ChevronDown
+                size={12}
+                className={`shrink-0 transition-transform ${modelOpen ? "rotate-180" : ""}`}
+              />
             </button>
-          )}
+            {modelOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setModelOpen(false)}
+                />
+                <div className="absolute bottom-full left-0 mb-2 w-80 max-w-[80vw] z-50 rounded-xl border border-line-soft bg-obsidian-900 shadow-2xl overflow-hidden flex flex-col">
+                  <div className="p-2 border-b border-line-hair">
+                    <input
+                      autoFocus
+                      value={modelFilter}
+                      onChange={(e) => setModelFilter(e.target.value)}
+                      placeholder="Filter models…"
+                      className="w-full bg-obsidian-950 border border-line-hair rounded-lg px-3 py-1.5 text-xs outline-none placeholder:text-ink-faint focus:border-line-soft"
+                    />
+                  </div>
+                  <div className="overflow-y-auto max-h-64 py-1">
+                    {modelLoading && (
+                      <p className="flex items-center gap-2 px-3 py-3 font-mono text-[11px] text-ink-faint">
+                        <Loader2 size={12} className="animate-spin" />
+                        Loading models…
+                      </p>
+                    )}
+                    {modelError && (
+                      <p className="px-3 py-3 font-mono text-[11px] text-red-400 break-words">
+                        {modelError}
+                      </p>
+                    )}
+                    {!modelLoading &&
+                      !modelError &&
+                      filteredModels.length === 0 && (
+                        <p className="px-3 py-3 font-mono text-[11px] text-ink-faint">
+                          No models found.
+                        </p>
+                      )}
+                    {filteredModels.map((m) => {
+                      const active = m.id === (model || defaultModel);
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setModel(m.id);
+                            syncedRef.current = true;
+                            setModelOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-obsidian-850 transition-colors ${
+                            active ? "bg-obsidian-850" : ""
+                          }`}
+                        >
+                          <span
+                            className={`block font-mono text-xs truncate ${
+                              active ? "text-signal" : "text-ink"
+                            }`}
+                          >
+                            {m.id}
+                          </span>
+                          <span className="block font-mono text-[10px] text-ink-faint truncate">
+                            {m.owned_by}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Agent mode toggle */}
           <button
@@ -132,10 +313,20 @@ export default function Omnibox({
             Agent
           </button>
 
+          {/* Image attachment (vision) */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={onFiles}
+          />
           <button
-            title="Lampiran (segera hadir)"
-            disabled
-            className="w-8 h-8 flex items-center justify-center rounded-full text-ink-faint opacity-40 cursor-not-allowed"
+            onClick={pickFiles}
+            title="Lampirkan gambar"
+            disabled={uploading || attachments.length >= 4}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-ink-mute hover:text-ink hover:bg-obsidian-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Paperclip size={15} />
           </button>
@@ -145,7 +336,7 @@ export default function Omnibox({
           {/* Submit */}
           <button
             onClick={submit}
-            disabled={!text.trim() || streaming}
+            disabled={!canSubmit}
             aria-label="Kirim"
             className="w-9 h-9 rounded-full bg-ink text-void flex items-center justify-center hover:bg-[#e4e4e7] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >

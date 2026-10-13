@@ -17,6 +17,7 @@ export interface ChatMessage {
   content: string;
   reasoningContent: string;
   toolName?: string | null;
+  attachmentsJson?: string | null;
   createdAt: number;
 }
 
@@ -48,8 +49,49 @@ export async function deleteSession(id: string): Promise<void> {
 }
 
 /** Kirim chat dan stream event SSE ke callback. */
+export interface Attachment {
+  id: string;
+  mime?: string;
+}
+
+export async function uploadImage(file: File): Promise<{ id: string; mime: string; size: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  const r = await fetch("/api/uploads", { method: "POST", body: form });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Upload gagal");
+  return j;
+}
+
+export async function listGatewayModels(
+  capability = "chat"
+): Promise<{ id: string; owned_by: string }[]> {
+  const r = await fetch(`/api/gateway/models?capability=${capability}`);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Gagal ambil daftar model");
+  return j.models || [];
+}
+
+export async function getGatewayStatus(): Promise<{
+  ok: boolean;
+  latencyMs?: number;
+  endpoint?: string;
+  models: Record<string, number>;
+}> {
+  const r = await fetch("/api/gateway/status");
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Gateway tidak terjangkau");
+  return j;
+}
+
 export async function streamChatRequest(
-  body: { sessionId?: string; message: string; model?: string; temperature?: number },
+  body: {
+    sessionId?: string;
+    message: string;
+    model?: string;
+    temperature?: number;
+    attachments?: Attachment[];
+  },
   onEvent: (e: SseEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {

@@ -10,14 +10,51 @@ interface Props {
   latencyMs?: number;
 }
 
+/** Parse attachmentsJson dengan aman → [{id}] (maks 4). */
+function parseAttachments(json?: string | null): { id: string }[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((x) => x && typeof x.id === "string")
+      .slice(0, 4)
+      .map((x) => ({ id: x.id as string }));
+  } catch {
+    return [];
+  }
+}
+
 export default function MessageItem({ message, streaming, latencyMs }: Props) {
   if (message.role === "user") {
+    const atts = parseAttachments(message.attachmentsJson);
     return (
       <div className="rise-in flex justify-end">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-obsidian-800 border border-line-hair px-4 py-3">
-          <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">
-            {message.content}
-          </p>
+          {atts.length > 0 && (
+            <div className="flex gap-2 flex-wrap mb-2">
+              {atts.map((a) => (
+                <a
+                  key={a.id}
+                  href={`/api/uploads/${a.id}/raw`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Buka gambar di tab baru"
+                >
+                  <img
+                    src={`/api/uploads/${a.id}/raw`}
+                    alt="attachment"
+                    className="w-24 h-24 rounded-xl object-cover border border-line-soft hover:border-line-mid transition-colors"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
+          {message.content && (
+            <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">
+              {message.content}
+            </p>
+          )}
         </div>
       </div>
     );
