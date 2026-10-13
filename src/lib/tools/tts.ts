@@ -39,7 +39,7 @@ async function textToSpeech(
   await saveBinaryArtifact(filename, audio, "mp3", ctx.sessionId);
   return {
     ok: true,
-    output: `Audio tersimpan: ${filename} (${audio.length} bytes). Buka di Artifacts & Studio untuk memutar.`,
+    output: `Audio tersimpan: ${filename} (${audio.length} bytes)${ctx.sessionId ? " — salinan ada di folder workspace thread" : ""}. Buka di Artifacts & Studio untuk memutar.`,
   };
 }
 

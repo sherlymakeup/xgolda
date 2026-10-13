@@ -1,10 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { TOOL_DEFINITIONS, TOOL_MAP, getToolManifest, toOpenAITools } from "../src/lib/tools/registry.ts";
 import { webSearchTool } from "../src/lib/tools/web-search.ts";
 import { webFetchTool } from "../src/lib/tools/web-fetch.ts";
 import { imageGenTool } from "../src/lib/tools/image-gen.ts";
 import { ttsTool } from "../src/lib/tools/tts.ts";
+import { saveBinaryArtifact } from "../src/lib/tools/gateway.ts";
+import { getSessionWorkspace } from "../src/lib/agent/workspace.ts";
+import { assertSafePath } from "../src/lib/security/path-jail.ts";
+import { getDb } from "../src/db/index.ts";
+import { artifacts, sessions } from "../src/db/schema.ts";
 
 /**
  * Hanya jalur validasi (tanpa network/gateway). Dijalankan via:
@@ -86,5 +95,43 @@ describe("gateway tools — validasi argumen", () => {
     r = await ttsTool.handler({ text: "a".repeat(4001) }, {});
     assert.equal(r.ok, false);
     assert.match(r.output, /4000/);
+  });
+});
+
+describe("saveBinaryArtifact — mirror ke workspace thread", () => {
+  it("menyalin file generate ke folder workspace sesi (bukan cuma artifacts store)", async () => {
+    const sid = `test-mirror-${nanoid(8)}`;
+    const filename = `mirror-${nanoid(8)}.mp3`;
+    const data = Buffer.from("fake-mp3-bytes");
+    try {
+      // artifacts.sessionId FK → sessions.id: bikin baris sesi dulu
+      const now = Date.now();
+      await getDb().insert(sessions).values({ id: sid, createdAt: now, updatedAt: now });
+      await saveBinaryArtifact(filename, data, "mp3", sid);
+
+      const wsDir = await getSessionWorkspace(sid);
+      const wsFile = path.join(wsDir, filename);
+      assert.ok(fs.existsSync(wsFile), "salinan workspace harus ada");
+      assert.equal(fs.readFileSync(wsFile).toString(), "fake-mp3-bytes");
+      assert.ok(fs.existsSync(assertSafePath(filename)), "copy artifacts store harus ada");
+    } finally {
+      await getDb().delete(artifacts).where(eq(artifacts.filename, filename));
+      await getDb().delete(sessions).where(eq(sessions.id, sid));
+      fs.rmSync(assertSafePath(filename), { force: true });
+      const wsDir = await getSessionWorkspace(sid);
+      fs.rmSync(path.join(wsDir, filename), { force: true });
+      fs.rmSync(wsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("tanpa sessionId tidak menyalin ke workspace (tidak throw)", async () => {
+    const filename = `mirror-${nanoid(8)}.mp3`;
+    try {
+      await saveBinaryArtifact(filename, Buffer.from("x"), "mp3");
+      assert.ok(fs.existsSync(assertSafePath(filename)));
+    } finally {
+      await getDb().delete(artifacts).where(eq(artifacts.filename, filename));
+      fs.rmSync(assertSafePath(filename), { force: true });
+    }
   });
 });

@@ -4,11 +4,13 @@
  * token dari env.gatewayToken(). Tidak pernah throw — selalu return result.
  */
 import fs from "node:fs";
+import path from "node:path";
 import { nanoid } from "nanoid";
 import { getDb } from "../../db/index.ts";
 import { artifacts } from "../../db/schema.ts";
 import { getConfig, type ConfigKey } from "../config.ts";
 import { env } from "../env.ts";
+import { getSessionWorkspace } from "../agent/workspace.ts";
 import { assertSafePath, ensureArtifactsDir } from "../security/path-jail.ts";
 
 export interface GatewayCall {
@@ -86,6 +88,11 @@ export async function gatewayModel(
 
 /**
  * Simpan file binary (gambar/audio) ke ./storage/artifacts/ + catat di DB artifacts.
+ * Bila sessionId ada, file JUGA disalin ke folder workspace thread
+ * (<AGENT_WORKSPACE_ROOT>/<sessionId>/) — supaya file hasil generate muncul
+ * di Explorer/Studio WORKSPACE & lolos verifikasi disk (yang hanya memeriksa
+ * folder workspace). Salinan workspace best-effort: gagal menyalin tidak
+ * menggagalkan tool (copy utama di artifacts store sudah tersimpan).
  * Mengembalikan nama file.
  */
 export async function saveBinaryArtifact(
@@ -107,5 +114,13 @@ export async function saveBinaryArtifact(
     createdAt: now,
     updatedAt: now,
   });
+  if (sessionId) {
+    try {
+      const wsDir = await getSessionWorkspace(sessionId);
+      fs.writeFileSync(path.join(wsDir, path.basename(filename)), data);
+    } catch {
+      /* abaikan — copy utama di artifacts store sudah tersimpan */
+    }
+  }
   return filename;
 }

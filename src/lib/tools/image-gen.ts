@@ -40,7 +40,7 @@ async function generateImage(
   await saveBinaryArtifact(filename, buf, "png", ctx.sessionId);
   return {
     ok: true,
-    output: `Gambar tersimpan: ${filename} (${buf.length} bytes). Buka di Artifacts & Studio untuk pratinjau.`,
+    output: `Gambar tersimpan: ${filename} (${buf.length} bytes)${ctx.sessionId ? " — salinan ada di folder workspace thread" : ""}. Buka di Artifacts & Studio untuk pratinjau.`,
   };
 }
 
