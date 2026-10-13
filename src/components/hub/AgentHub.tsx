@@ -12,6 +12,7 @@ import {
   History,
   Image,
   Mic,
+  Monitor,
   Newspaper,
   Plug,
   ShieldCheck,
@@ -140,6 +141,14 @@ const TOOLS: ToolCard[] = [
     icon: History,
     category: "Memory",
   },
+  {
+    name: "system_info",
+    title: "System Info",
+    description:
+      "PC specs & installed runtimes/SDKs (OS, CPU, RAM, disk, node, python, git, docker…). Injected into every run's system prompt; call for a fresh re-check.",
+    icon: Monitor,
+    category: "Execution",
+  },
 ];
 
 const CATEGORIES: ("All" | Category)[] = [
@@ -165,7 +174,7 @@ const STATS: {
 }[] = [
   {
     label: "Tools Online",
-    value: "13 / 13",
+    value: "14 / 14",
     sub: "100% Ready",
     subClass: "text-signal",
     barClass: "bg-signal",

@@ -113,10 +113,19 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       /* memori gagal bukan fatal — lanjut tanpa memori */
     }
     const persona = (cfg.values.AGENT_PERSONA || "").trim();
+    // Profil PC (cached 10 menit) — agen tahu spek & toolchain tanpa perlu nanya
+    let environment = "";
+    try {
+      const { getEnvProfile, formatEnvBlock } = await import("./environment.ts");
+      environment = formatEnvBlock(await getEnvProfile());
+    } catch {
+      /* profil gagal bukan fatal */
+    }
     const systemPrompt = buildAgentSystemPrompt(getToolManifest(), getSkillCatalogText(), {
       workspaceDir,
       persona,
       memories: memoryBlock,
+      environment,
     });
     const history: {
       toolName: string;

@@ -23,6 +23,8 @@ export interface AgentPromptExtras {
   persona?: string;
   /** Memori jangka panjang yang relevan (auto-recall), format bullet list. */
   memories?: string;
+  /** Profil lingkungan PC (OS, CPU, RAM, runtime) — sudah diformat. */
+  environment?: string;
 }
 
 export function buildAgentSystemPrompt(
@@ -39,6 +41,9 @@ export function buildAgentSystemPrompt(
     : "";
   const memorySection = extras.memories
     ? `\nMEMORI JANGKA PANJANG (relevan dengan goal — manfaatkan, jangan minta ulang info ini):\n${extras.memories}\n`
+    : "";
+  const envSection = extras.environment
+    ? `\nLINGKUNGAN PC (tempat kamu berjalan — sesuaikan toolchain & perintah dengan ini):\n${extras.environment}\n`
     : "";
   return `Kamu adalah XGOLDA Agent — agen otonom yang bekerja langkah demi langkah untuk mencapai GOAL pengguna.
 
@@ -61,7 +66,7 @@ ATURAN KERAS:
    user klik Setujui/Tolak. Saat memakai perintah seperti itu, JELASKAN dulu di pesanmu
    kenapa perintah itu perlu dan apa risikonya, supaya user bisa memutuskan.
    Kalau ditolak/kedaluwarsa, tawarkan alternatif yang lebih aman.
-${skillSection}${personaSection}${memorySection}
+${skillSection}${personaSection}${memorySection}${envSection}
 TOOLS TERSEDIA:
 ${toolManifest}
 

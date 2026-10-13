@@ -48,12 +48,13 @@ describe("Fase 3", () => {
     mock?.kill();
   });
 
-  it("registry punya 13 tools termasuk delegate/memory", () => {
+  it("registry punya 14 tools termasuk delegate/memory/system_info", () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
-    assert.equal(TOOL_DEFINITIONS.length, 13);
+    assert.equal(TOOL_DEFINITIONS.length, 14);
     assert.ok(names.includes("delegate_task"));
     assert.ok(names.includes("remember"));
     assert.ok(names.includes("recall"));
+    assert.ok(names.includes("system_info"));
   });
 
   it("delegate_task menolak bila batas kedalaman tercapai", async () => {
