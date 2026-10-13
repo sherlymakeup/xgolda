@@ -43,6 +43,8 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   /** Teks jawaban final yang di-stream via SSE (token per token). */
   const [streamText, setStreamText] = useState("");
+  /** Konfirmasi penerimaan goal — dari gateway (SSE), BUKAN template hardcoded. */
+  const [ackText, setAckText] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const doneFired = useRef(false);
 
@@ -78,7 +80,9 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
     es.onmessage = (ev) => {
       try {
         const e = JSON.parse(ev.data) as RunEvent;
-        if (e.type === "token") {
+        if (e.type === "ack") {
+          setAckText(e.text);
+        } else if (e.type === "token") {
           setStreamText((t) => t + e.text);
         } else if (e.type === "final") {
           setStreamText(e.text);
@@ -112,17 +116,19 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
 
   return (
     <>
-    {/* Bubble konfirmasi: agen sudah terima prompt, baru proses dimulai */}
-    <MessageItem
-      message={{
-        id: `${runId}-ack`,
-        sessionId: "",
-        role: "assistant",
-        content: "Siap bos, diterima — gue kerjain sekarang.",
-        reasoningContent: "",
-        createdAt: Date.now(),
-      }}
-    />
+    {/* Bubble konfirmasi: respons asli dari gateway (via SSE), bukan template */}
+    {ackText && (
+      <MessageItem
+        message={{
+          id: `${runId}-ack`,
+          sessionId: "",
+          role: "assistant",
+          content: ackText,
+          reasoningContent: "",
+          createdAt: Date.now(),
+        }}
+      />
+    )}
     <div className="rounded-xl border border-signal/40 bg-obsidian-950 shadow-signal-glow overflow-hidden rise-in">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line-hair">
         <span

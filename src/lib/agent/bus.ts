@@ -5,6 +5,7 @@
 
 export type RunEvent =
   | { type: "plan"; steps: { step: number; title: string; description: string; tool: string | null }[] }
+  | { type: "ack"; text: string }
   | { type: "token"; text: string }
   | { type: "final"; text: string }
   | { type: "done"; status: "completed" | "failed" }

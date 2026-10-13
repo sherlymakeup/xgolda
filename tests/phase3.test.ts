@@ -18,8 +18,8 @@ const { delegateTaskTool } = await import("../src/lib/tools/delegate.ts");
 const { rememberTool, recallTool } = await import("../src/lib/tools/memory.ts");
 const {
   buildAgentSystemPrompt,
-  buildCriticPrompt,
 } = await import("../src/lib/ai/prompt-templates.ts");
+const { verifyFinalAnswer } = await import("../src/lib/agent/verify.ts");
 const { deleteEmbedding } = await import("../src/db/vector.ts");
 
 function waitForReady(child: ChildProcess): Promise<void> {
@@ -69,17 +69,40 @@ describe("Fase 3", () => {
     assert.match(r.output, /wajib diisi/);
   });
 
-  it("buildCriticPrompt memuat goal + draf + bukti tool + aturan file", () => {
-    const p = buildCriticPrompt("buatkan laporan", "draf jawaban", "[1] fs_write_artifact => OK", "File yang TERVERIFIKASI tertulis (deterministik): laporan.md");
-    assert.match(p, /buatkan laporan/);
-    assert.match(p, /draf jawaban/);
-    assert.match(p, /fs_write_artifact/);
-    assert.match(p, /BUKTI EKSEKUSI TOOL/);
-    assert.match(p, /ATURAN FILE/);
-    assert.match(p, /ATURAN KLAIM GAGAL/);
-    assert.match(p, /laporan\.md/);
-    // Critic tidak boleh menolak membabi buta
-    assert.match(p, /DILARANG menulis penolakan/);
+  it("verifyFinalAnswer: klaim file tanpa bukti ditandai belum terverifikasi", () => {
+    const out = verifyFinalAnswer("spec.md sudah disusun berisi OS dan CPU.", {
+      written: [],
+      succeeded: ["system_info"],
+      failed: [],
+    });
+    assert.match(out, /belum terverifikasi/);
+    assert.match(out, /sudah disusun/); // isi draf dipertahankan
+  });
+
+  it("verifyFinalAnswer: klaim gagal palsu diganti laporan fakta", () => {
+    const out = verifyFinalAnswer(
+      "Tool belum mengembalikan hasil, jadi test.md belum bisa dipastikan.",
+      { written: ["test.md"], succeeded: ["fs_write_artifact"], failed: [] }
+    );
+    assert.match(out, /Selesai/);
+    assert.match(out, /test\.md/);
+    assert.doesNotMatch(out, /belum bisa dipastikan/);
+  });
+
+  it("verifyFinalAnswer: draf jujur dibiarkan apa adanya", () => {
+    const draft = "test.md sudah dibuat di folder workspace.";
+    const out = verifyFinalAnswer(draft, {
+      written: ["test.md"],
+      succeeded: ["fs_write_artifact"],
+      failed: [],
+    });
+    assert.equal(out, draft);
+    const honest = verifyFinalAnswer("Maaf bos, fs_write gagal karena path tidak valid.", {
+      written: [],
+      succeeded: [],
+      failed: ["fs_write_artifact: ERROR path"],
+    });
+    assert.equal(honest, "Maaf bos, fs_write gagal karena path tidak valid.");
   });
 
   it("system prompt memuat persona + memori", () => {

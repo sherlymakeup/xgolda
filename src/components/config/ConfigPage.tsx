@@ -52,7 +52,7 @@ const SECTIONS: SectionDef[] = [
     rows: [
       { key: "AGENT_MAX_STEPS", label: "Max Steps per Run", hint: "Batas iterasi plan → execute → evaluate." },
       { key: "AGENT_MAX_DEPTH", label: "Max Delegation Depth", hint: "Kedalaman maksimal subagent beranak (delegate_task). 0 = delegasi mati." },
-      { key: "AGENT_CRITIC_ENABLED", label: "Critic Pass", hint: "1 = verifikasi independen sebelum jawaban final. 0 = mati." },
+      { key: "AGENT_CRITIC_ENABLED", label: "Verifikasi Jawaban", hint: "1 = verifikasi deterministik jawaban final terhadap bukti tool. 0 = mati." },
       { key: "AGENT_PERSONA", label: "Agent Persona", hint: "Gaya komunikasi agen (dimasukkan ke system prompt).", long: true },
       { key: "AGENT_WORKSPACE_ROOT", label: "Agent Workspace Root", hint: "Folder kerja agen per thread: <root>/<thread-id>/. Agen di-jail di dalamnya." },
       { key: "EXECUTION_TIMEOUT_MS", label: "Execution Timeout (ms)", hint: "terminal_exec dibunuh otomatis melewati batas ini." },

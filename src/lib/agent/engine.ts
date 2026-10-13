@@ -2,12 +2,11 @@ import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "../../db/index.ts";
 import { agentRuns, messages, toolExecutions } from "../../db/schema.ts";
-import { chatOnce, streamChat } from "../ai/client.ts";
+import { chatOnce } from "../ai/client.ts";
 import { getConfig, num } from "../config.ts";
 import { extractToolCalls } from "../ai/parser.ts";
 import {
   buildAgentSystemPrompt,
-  buildCriticPrompt,
   buildStepPrompt,
 } from "../ai/prompt-templates.ts";
 import { toGatewayError } from "../security/sanitization.ts";
@@ -16,6 +15,7 @@ import { getSkillCatalogText } from "../skills/loader.ts";
 import { generatePlan } from "./planner.ts";
 import { summarizeToolHistory } from "./context.ts";
 import { getSessionWorkspace } from "./workspace.ts";
+import { verifyFinalAnswer } from "./verify.ts";
 import { emitRunEvent } from "./bus.ts";
 
 export interface AgentRunOptions {
@@ -78,6 +78,34 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
   };
 
   try {
+    // --- ACK: konfirmasi penerimaan goal — WAJIB respons asli dari gateway,
+    // bukan template hardcoded. Hanya untuk run utama (bukan subagent).
+    if (depth === 0) {
+      try {
+        const persona = (cfg.values.AGENT_PERSONA || "").trim();
+        const { content: ack } = await chatOnce(
+          [
+            {
+              role: "user",
+              content:
+                `Kamu adalah XGOLDA Agent. User baru saja memberi goal berikut:\n\n${opts.goal}\n\n` +
+                `Balas dengan SATU kalimat konfirmasi singkat (maksimal 15 kata) bahwa kamu menerima goal ini dan akan mengerjakannya. ` +
+                `JANGAN mulai mengerjakan, JANGAN menjelaskan rencana — hanya konfirmasi penerimaan. ` +
+                `Gunakan Bahasa Indonesia santai.${persona ? ` Gaya: ${persona.slice(0, 200)}` : ""}`,
+            },
+          ],
+          { model, temperature: 0.5 }
+        );
+        const ackText = ack.trim().slice(0, 300);
+        if (ackText) {
+          emitRunEvent(opts.runId, { type: "ack", text: ackText });
+        }
+      } catch (e) {
+        // Ack gagal bukan fatal — lanjut ke planning
+        console.error("[agent] ack gagal:", e instanceof Error ? e.message : e);
+      }
+    }
+
     // --- PLANNING ---
     await setStatus("planning");
     let planTreeJson = "[]";
@@ -261,85 +289,32 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         "Langkah maksimum tercapai. Riwayat eksekusi tool tersimpan dan bisa dilihat di status run.";
     }
 
-    // CRITIC PASS (streaming): verifikasi independen sebelum jawaban final diserahkan.
-    // Token-token jawaban final disiarkan via SSE agar client bisa streaming.
-    // Hanya bila ada eksekusi tool (ada bukti yang bisa diverifikasi).
+    // VERIFIKASI DETERMINISTIK (menggantikan critic LLM): cocokkan klaim
+    // jawaban final dengan bukti tool. Hanya mengintervensi bila ada
+    // kontradiksi yang terbukti — selain itu draf dibiarkan apa adanya.
     if (finalAnswer && history.length > 0 && cfg.values.AGENT_CRITIC_ENABLED !== "0") {
-      try {
-        // Fakta terverifikasi deterministik (bukan klaim model): file yang
-        // benar-benar tertulis + tool yang gagal. Critic wajib memakainya.
-        const written: string[] = [];
-        const failed: string[] = [];
-        const succeeded: string[] = [];
-        for (const h of history) {
-          try {
-            const args = JSON.parse(h.argsJson) as { filename?: string };
-            const res = JSON.parse(h.resultJson) as { ok?: boolean; output?: string };
-            if (h.toolName === "fs_write_artifact" && res.ok && args.filename) {
-              written.push(String(args.filename));
-            }
-            if (res.ok === false) {
-              failed.push(
-                `${h.toolName}: ${String(res.output || "").slice(0, 200)}`
-              );
-            } else if (res.ok === true) {
-              succeeded.push(h.toolName);
-            }
-          } catch {
-            /* abaikan baris rusak */
+      const written: string[] = [];
+      const failed: string[] = [];
+      const succeeded: string[] = [];
+      for (const h of history) {
+        try {
+          const args = JSON.parse(h.argsJson) as { filename?: string };
+          const res = JSON.parse(h.resultJson) as { ok?: boolean; output?: string };
+          if (h.toolName === "fs_write_artifact" && res.ok && args.filename) {
+            written.push(String(args.filename));
           }
-        }
-        const verified =
-          `File yang TERVERIFIKASI tertulis (deterministik): ` +
-          (written.length > 0 ? written.join(", ") : "(tidak ada)") +
-          `\nTool yang BERHASIL: ` +
-          (succeeded.length > 0 ? Array.from(new Set(succeeded)).join(", ") : "(tidak ada)") +
-          `\nTool yang GAGAL: ` +
-          (failed.length > 0 ? failed.join(" | ") : "(tidak ada)");
-        const draftLen = finalAnswer.trim().length;
-        let streamed = "";
-        const r = await streamChat(
-          [
-            {
-              role: "user",
-              content: buildCriticPrompt(
-                opts.goal,
-                finalAnswer,
-                summarizeToolHistory(history),
-                verified
-              ),
-            },
-          ],
-          {
-            model,
-            temperature: 0.2,
-            onEvent: (e) => {
-              if (e.type === "content" && e.delta) {
-                streamed += e.delta;
-                emitRunEvent(opts.runId, { type: "token", text: e.delta });
-              }
-            },
-          }
-        );
-        const corrected = (r.content || streamed).trim();
-        // GUARD anti-garble: tolak output critic yang degenerate
-        // (mis. draf panjang -> koreksi cuma beberapa karakter aneh).
-        if (corrected) {
-          const degenerate = draftLen > 200 && corrected.length < 50;
-          if (!degenerate) {
-            finalAnswer = corrected;
-          } else {
-            console.error(
-              `[agent] critic degenerate (${corrected.length} char), pakai draf`
+          if (res.ok === false) {
+            failed.push(
+              `${h.toolName}: ${String(res.output || "").slice(0, 200)}`
             );
+          } else if (res.ok === true) {
+            succeeded.push(h.toolName);
           }
+        } catch {
+          /* abaikan baris rusak */
         }
-      } catch (e) {
-        console.error("[agent] critic gagal, pakai draf:", e instanceof Error ? e.message : e);
       }
-    } else if (finalAnswer) {
-      // Tanpa critic: siarkan draf utuh sebagai satu event final
-      emitRunEvent(opts.runId, { type: "final", text: finalAnswer });
+      finalAnswer = verifyFinalAnswer(finalAnswer, { written, succeeded, failed });
     }
 
     // RECOVERY: bila jawaban final degenerate (kosong/sampah), coba satu
@@ -363,11 +338,15 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
         );
         if (content.trim().replace(/[\s【】\[\]]/g, "").length >= 10) {
           finalAnswer = content.trim();
-          emitRunEvent(opts.runId, { type: "final", text: finalAnswer });
         }
       } catch (e) {
         console.error("[agent] recovery gagal:", e instanceof Error ? e.message : e);
       }
+    }
+
+    // Siarkan jawaban final (terverifikasi) ke client SSE
+    if (finalAnswer) {
+      emitRunEvent(opts.runId, { type: "final", text: finalAnswer });
     }
 
     // Simpan jawaban final sebagai pesan asisten di sesi (bila ada sessionId),
