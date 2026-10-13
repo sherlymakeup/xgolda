@@ -4,6 +4,19 @@
 
 ---
 
+## 0. Update (tiap abis `git pull`)
+
+```powershell
+cd xgolda-workspace
+git pull
+npx drizzle-kit migrate   # WAJIB tiap update — skema database bisa berubah
+npm run dev
+```
+
+Kalau lupa migrate, fitur baru yang butuh kolom/tabel baru bakal error.
+
+---
+
 ## 1. Prasyarat
 
 - **Windows 11** 64-bit

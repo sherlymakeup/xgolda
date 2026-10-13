@@ -95,6 +95,7 @@ export interface AgentRunStatus {
     status: string;
     currentStep: number;
     error?: string | null;
+    resultText?: string | null;
   };
   plan: { step: number; title: string; description: string; tool: string | null }[];
   steps: {
@@ -119,12 +120,13 @@ export interface AgentRunStatus {
 export async function startAgentRun(
   goal: string,
   sessionId?: string,
-  model?: string
+  model?: string,
+  userText?: string
 ): Promise<{ runId: string }> {
   const r = await fetch("/api/agent/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goal, sessionId, model }),
+    body: JSON.stringify({ goal, sessionId, model, userText }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || "Gagal memulai agent");

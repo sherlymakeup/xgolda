@@ -37,7 +37,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
 
   const setStatus = async (
     status: "planning" | "running" | "completed" | "failed",
-    patch: Partial<{ planTreeJson: string; currentStep: number; error: string; finishedAt: number }> = {}
+    patch: Partial<{ planTreeJson: string; currentStep: number; error: string; finishedAt: number; resultText: string }> = {}
   ) => {
     await db
       .update(agentRuns)
@@ -190,7 +190,12 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<void> {
       });
     }
 
-    await setStatus("completed", { finishedAt: Date.now() });
+    // Simpan juga di baris run agar API status/panel bisa menampilkannya
+    // walau tanpa sessionId.
+    await setStatus("completed", {
+      finishedAt: Date.now(),
+      ...(finalAnswer ? { resultText: finalAnswer } : {}),
+    });
   } catch (e) {
     const gw = toGatewayError(e);
     await setStatus("failed", {

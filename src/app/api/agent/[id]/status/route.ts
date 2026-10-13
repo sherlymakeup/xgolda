@@ -47,6 +47,7 @@ export async function GET(
       status: run.status,
       currentStep: run.currentStep,
       error: run.error,
+      resultText: run.resultText,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
       finishedAt: run.finishedAt,

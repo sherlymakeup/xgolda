@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { NextRequest } from "next/server";
 import { getDb } from "@/db";
-import { agentRuns } from "@/db/schema";
+import { agentRuns, messages } from "@/db/schema";
 import { runAgentLoop } from "@/lib/agent/engine";
 import { env } from "@/lib/env";
 
@@ -10,10 +10,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/agent/run — picu autonomous loop.
- * Body: { goal, sessionId?, model? } -> { runId } (langsung kembali, loop jalan di background)
+ * Body: { goal, sessionId?, model?, userText? } -> { runId } (langsung kembali, loop jalan di background)
+ * Bila sessionId ada, pesan user ikut disimpan ke sesi agar riwayat chat utuh.
  */
 export async function POST(req: NextRequest) {
-  let body: { goal?: string; sessionId?: string; model?: string };
+  let body: { goal?: string; sessionId?: string; model?: string; userText?: string };
   try {
     body = await req.json();
   } catch {
@@ -35,6 +36,17 @@ export async function POST(req: NextRequest) {
     createdAt: now,
     updatedAt: now,
   });
+
+  if (body.sessionId) {
+    await db.insert(messages).values({
+      id: nanoid(),
+      sessionId: body.sessionId,
+      role: "user",
+      content: (body.userText || goal).slice(0, 4000),
+      reasoningContent: "",
+      createdAt: now,
+    });
+  }
 
   // Fire-and-forget: status bisa di-poll via GET /api/agent/[id]/status
   runAgentLoop({

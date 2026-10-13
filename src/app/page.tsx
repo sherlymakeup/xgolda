@@ -125,8 +125,36 @@ export default function Home() {
     if (useAgent) {
       // Mode agen otonom: tampilkan panel, polling status
       try {
-        const { runId } = await startAgentRun(goal, activeId, opts.model);
+        // Pastikan selalu ada sesi — jawaban final butuh sessionId agar tersimpan
+        let sid = activeId;
+        if (!sid) {
+          const r = await fetch("/api/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: text.slice(0, 60) || "Percakapan baru",
+            }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || "Gagal membuat sesi");
+          sid = j.id;
+          setActiveId(sid);
+          refreshSessions();
+        }
+        const { runId } = await startAgentRun(goal, sid, opts.model, text);
         setRuns((r) => [...r, { runId, goal: text }]);
+        // Tampilkan pesan user langsung; jawaban final dimuat ulang saat run selesai
+        setMessages((m) => [
+          ...m,
+          {
+            id: `local-u-${Date.now()}`,
+            sessionId: sid ?? "",
+            role: "user",
+            content: text,
+            reasoningContent: "",
+            createdAt: Date.now(),
+          },
+        ]);
         setStudioKey((k) => k + 1); // agen mungkin menulis artifact
         if (opts.mode === "code") setStudioOpen(true);
       } catch (e) {
@@ -327,6 +355,16 @@ export default function Home() {
                               list.filter((x) => x.runId !== r.runId)
                             )
                           }
+                          onDone={() => {
+                            // Run selesai: muat ulang pesan sesi agar jawaban final muncul
+                            const sid = activeId;
+                            if (sid) {
+                              getSession(sid)
+                                .then(({ messages }) => setMessages(messages))
+                                .catch(() => {});
+                              refreshSessions();
+                            }
+                          }}
                         />
                       ))}
 

@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   decideApproval,
   getAgentStatus,
+  renderMarkdown,
   type AgentRunStatus,
 } from "@/lib/client-api";
 
@@ -22,6 +23,8 @@ interface Props {
   runId: string;
   goal: string;
   onClose: () => void;
+  /** Dipanggil sekali saat run selesai/gagal — untuk refresh daftar pesan. */
+  onDone?: () => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -32,11 +35,12 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Gagal",
 };
 
-export default function AgentPanel({ runId, goal, onClose }: Props) {
+export default function AgentPanel({ runId, goal, onClose, onDone }: Props) {
   const [status, setStatus] = useState<AgentRunStatus | null>(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const doneFired = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -47,6 +51,10 @@ export default function AgentPanel({ runId, goal, onClose }: Props) {
         setStatus(s);
         if (s.run.status === "completed" || s.run.status === "failed") {
           if (timer.current) clearInterval(timer.current);
+          if (!doneFired.current) {
+            doneFired.current = true;
+            onDone?.();
+          }
         }
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : String(e));
@@ -227,6 +235,21 @@ export default function AgentPanel({ runId, goal, onClose }: Props) {
 
         {status && status.run.error && (
           <p className="text-xs text-red-400 font-mono">{status.run.error}</p>
+        )}
+
+        {/* Jawaban final agen */}
+        {done && status?.run.resultText && (
+          <div className="mt-3">
+            <p className="font-mono text-[10px] tracking-widest text-signal mb-1.5">
+              HASIL
+            </p>
+            <div
+              className="prose-xgolda text-sm text-ink bg-void rounded-xl border border-line-hair px-3.5 py-3 break-words"
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(status.run.resultText),
+              }}
+            />
+          </div>
         )}
 
         {!status && !error && (

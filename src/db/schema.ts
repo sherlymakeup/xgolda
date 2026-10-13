@@ -39,6 +39,8 @@ export const agentRuns = sqliteTable("agent_runs", {
   planTreeJson: text("plan_tree_json").notNull().default("[]"),
   currentStep: integer("current_step").notNull().default(0),
   error: text("error"),
+  /** Jawaban final agen — ditampilkan di panel & API status. */
+  resultText: text("result_text"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
   finishedAt: integer("finished_at"),
