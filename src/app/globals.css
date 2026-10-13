@@ -80,6 +80,14 @@ body {
   margin: 0.5rem 0;
   line-height: 1.625;
 }
+/* Blok pertama/terakhir di bubble: margin luar di-nol-kan supaya bubble
+   tidak kelihatan ada ruang kosong ekstra di dalam. */
+.prose-xgolda > :first-child {
+  margin-top: 0;
+}
+.prose-xgolda > :last-child {
+  margin-bottom: 0;
+}
 .prose-xgolda ul,
 .prose-xgolda ol {
   margin: 0.5rem 0;

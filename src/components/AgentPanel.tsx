@@ -115,7 +115,11 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
   };
 
   return (
-    <>
+    // Grup rapat (space-y-2): ack + panel + jawaban final adalah SATU
+    // giliran agen. Tanpa wrapper div ini, fragment melebur di DOM dan
+    // space-y-6 timeline nempelin margin 24px ke tiap blok — bubble
+    // jawaban kelihatan ngambang copot dari panelnya.
+    <div className="space-y-2">
     {/* Bubble konfirmasi: respons asli dari gateway (via SSE), bukan template */}
     {ackText && (
       <MessageItem
@@ -316,6 +320,6 @@ export default function AgentPanel({ runId, onClose, onDone }: Props) {
     {finalText && (
       <MessageItem message={finalMessage} streaming={!done && !!streamText} />
     )}
-    </>
+    </div>
   );
 }
