@@ -3,8 +3,11 @@
 import {
   Code2,
   Eye,
+  File,
   FileAudio,
   FileCode2,
+  FileText,
+  FileVideo,
   Image as ImageIcon,
   Loader2,
   Play,
@@ -17,10 +20,17 @@ import {
   listArtifacts,
   type ArtifactMeta,
 } from "@/lib/client-api";
+import {
+  formatSize,
+  previewKind,
+  type WorkspaceFile,
+} from "@/lib/workspace-files";
 
 interface Props {
   onClose: () => void;
   refreshKey: number;
+  /** Thread aktif — untuk menampilkan file workspace sesi ini. */
+  sessionId?: string | null;
 }
 
 type MediaKind = "image" | "audio" | null;
@@ -78,7 +88,7 @@ try {
 </html>`;
 }
 
-export default function ArtifactStudio({ onClose, refreshKey }: Props) {
+export default function ArtifactStudio({ onClose, refreshKey, sessionId }: Props) {
   const [list, setList] = useState<ArtifactMeta[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [source, setSource] = useState("");
@@ -86,6 +96,14 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
   const [previewDoc, setPreviewDoc] = useState<string | null>(null);
   const [compiling, setCompiling] = useState(false);
   const [compileError, setCompileError] = useState("");
+  // File workspace thread (dibuat agen — ekstensi apapun)
+  const [wsFiles, setWsFiles] = useState<WorkspaceFile[]>([]);
+  const [wsSelected, setWsSelected] = useState<string | null>(null);
+  const [wsText, setWsText] = useState("");
+  const [wsLoading, setWsLoading] = useState(false);
+
+  const wsRawUrl = (p: string) =>
+    `/api/workspace-files/raw?sessionId=${encodeURIComponent(sessionId || "")}&path=${encodeURIComponent(p)}`;
 
   const reload = async () => {
     try {
@@ -93,11 +111,26 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
     } catch {
       /* abaikan */
     }
+    if (sessionId) {
+      try {
+        const r = await fetch(
+          `/api/workspace-files?sessionId=${encodeURIComponent(sessionId)}`
+        );
+        if (r.ok) {
+          const j = await r.json();
+          setWsFiles(j.files || []);
+        }
+      } catch {
+        /* abaikan */
+      }
+    } else {
+      setWsFiles([]);
+    }
   };
 
   useEffect(() => {
     reload();
-  }, [refreshKey]);
+  }, [refreshKey, sessionId]);
 
   const open = async (id: string) => {
     setSelectedId(id);
@@ -118,6 +151,35 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
     } catch {
       setSource("// Gagal memuat artifact");
     }
+  };
+
+  const openWs = async (p: string) => {
+    setSelectedId(null);
+    setPreviewDoc(null);
+    setWsSelected(p);
+    setWsText("");
+    const kind = previewKind(p);
+    if (kind !== "text") return; // image/audio/video/other: render langsung dari URL
+    setWsLoading(true);
+    try {
+      const r = await fetch(wsRawUrl(p));
+      if (!r.ok) throw new Error();
+      const t = await r.text();
+      setWsText(t.slice(0, 200_000));
+    } catch {
+      setWsText("// Gagal memuat file");
+    } finally {
+      setWsLoading(false);
+    }
+  };
+
+  const wsIcon = (p: string) => {
+    const k = previewKind(p);
+    if (k === "image") return ImageIcon;
+    if (k === "audio") return FileAudio;
+    if (k === "video") return FileVideo;
+    if (k === "text") return FileText;
+    return File;
   };
 
   const runPreview = async () => {
@@ -157,14 +219,47 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
         </button>
       </div>
 
-      {!selectedId ? (
+      {!selectedId && !wsSelected ? (
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {/* FILE WORKSPACE — dibuat agen di thread ini, ekstensi apapun */}
+          <div className="font-mono text-[10px] tracking-[0.08em] text-ink-faint px-2 pt-1">
+            WORKSPACE · {sessionId ? sessionId.slice(0, 8) : "—"}
+            <span className="text-ink-faint/70"> — file buatan agen di thread ini</span>
+          </div>
+          {wsFiles.length === 0 && (
+            <p className="text-xs text-ink-faint px-2 py-2 leading-relaxed">
+              {sessionId
+                ? "Belum ada file di folder workspace thread ini."
+                : "Buka sebuah thread untuk melihat file workspace-nya."}
+            </p>
+          )}
+          {wsFiles.map((f) => {
+            const WIcon = wsIcon(f.path);
+            return (
+              <button
+                key={f.path}
+                onClick={() => openWs(f.path)}
+                className="w-full flex items-center gap-2.5 rounded-xl border border-line-hair bg-obsidian-900 hover:border-line-soft px-3 py-2.5 text-left transition-colors"
+              >
+                <WIcon size={14} className="text-signal shrink-0" />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm text-ink truncate">{f.path}</span>
+                  <span className="block font-mono text-[10px] text-ink-faint">
+                    {formatSize(f.size)} ·{" "}
+                    {new Date(f.mtime).toLocaleString("id-ID")}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+          {/* GENERATED — media/artifact dari tabel artifacts */}
+          <div className="font-mono text-[10px] tracking-[0.08em] text-ink-faint px-2 pt-3">
+            GENERATED
+            <span className="text-ink-faint/70"> — gambar/audio hasil generate</span>
+          </div>
           {list.length === 0 && (
-            <p className="text-xs text-ink-faint px-2 py-6 leading-relaxed">
-              Belum ada artifact.
-              <br />
-              File yang dibuat agen tersimpan di folder workspace thread ini.
-              Media yang di-generate (gambar/audio) muncul di sini.
+            <p className="text-xs text-ink-faint px-2 py-2 leading-relaxed">
+              Belum ada media yang di-generate.
             </p>
           )}
           {list.map((a) => {
@@ -187,6 +282,52 @@ export default function ArtifactStudio({ onClose, refreshKey }: Props) {
               </button>
             );
           })}
+        </div>
+      ) : wsSelected ? (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-line-hair">
+            <button
+              onClick={() => setWsSelected(null)}
+              className="text-xs text-ink-mute hover:text-ink font-mono"
+            >
+              ← Kembali
+            </button>
+            <span className="text-sm text-ink truncate flex-1">{wsSelected}</span>
+            <a
+              href={wsRawUrl(wsSelected)}
+              download={wsSelected.split("/").pop()}
+              className="text-xs text-ink-mute hover:text-ink font-mono"
+            >
+              Unduh
+            </a>
+          </div>
+          <div className="flex-1 overflow-auto p-3.5">
+            {previewKind(wsSelected) === "text" ? (
+              wsLoading ? (
+                <Loader2 size={16} className="animate-spin text-ink-mute" />
+              ) : (
+                <pre className="font-mono text-[12px] leading-relaxed text-ink-dim whitespace-pre-wrap break-words">
+                  {wsText}
+                </pre>
+              )
+            ) : previewKind(wsSelected) === "image" ? (
+              <img
+                src={wsRawUrl(wsSelected)}
+                alt={wsSelected}
+                className="max-w-full rounded-lg border border-line-hair"
+              />
+            ) : previewKind(wsSelected) === "audio" ? (
+              <audio controls src={wsRawUrl(wsSelected)} className="w-full" />
+            ) : previewKind(wsSelected) === "video" ? (
+              <video controls src={wsRawUrl(wsSelected)} className="max-w-full rounded-lg" />
+            ) : (
+              <p className="text-xs text-ink-faint leading-relaxed">
+                Preview tidak tersedia untuk tipe file ini.
+                <br />
+                Klik Unduh untuk membuka file.
+              </p>
+            )}
+          </div>
         </div>
       ) : (
         <div className="flex-1 flex flex-col min-h-0">

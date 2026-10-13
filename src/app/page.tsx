@@ -508,7 +508,7 @@ export default function Home() {
 
       {/* Artifact Studio kanan */}
       {studioOpen && (
-        <ArtifactStudio onClose={() => setStudioOpen(false)} refreshKey={studioKey} />
+        <ArtifactStudio onClose={() => setStudioOpen(false)} refreshKey={studioKey} sessionId={activeId} />
       )}
     </div>
   );
