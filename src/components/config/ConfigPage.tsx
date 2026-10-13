@@ -45,6 +45,7 @@ const SECTIONS: SectionDef[] = [
       { key: "WEB_FETCH_MODEL", label: "Model Web Fetch", hint: "Tool web_fetch agen (URL → markdown)." },
       { key: "IMAGE_MODEL", label: "Model Image Generation", hint: "Tool generate_image agen." },
       { key: "TTS_MODEL", label: "Model Text-to-Speech", hint: "Tool text_to_speech agen." },
+      { key: "TTS_VOICE", label: "Voice ID Text-to-Speech", hint: "Voice default tool text_to_speech (mis. ID voice ElevenLabs). Kosong = default gateway." },
     ],
   },
   {

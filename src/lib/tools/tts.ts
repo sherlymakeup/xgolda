@@ -14,12 +14,19 @@ async function textToSpeech(
   if (text.length > MAX_TEXT) {
     return { ok: false, output: `ERROR: 'text' maksimal ${MAX_TEXT} karakter (dapat ${text.length})` };
   }
-  const voice = arg(args.voice).trim();
-  const model = voice || (await gatewayModel("TTS_MODEL"));
+  // Model & voice terpisah: `voice` adalah ID voice (mis. ElevenLabs),
+  // BUKAN model. Keduanya bisa di-override per panggilan via args,
+  // atau default dari config (TTS_MODEL / TTS_VOICE, bisa diubah di
+  // halaman Update Config tanpa restart).
+  const model = arg(args.model).trim() || (await gatewayModel("TTS_MODEL"));
+  const voice = arg(args.voice).trim() || (await gatewayModel("TTS_VOICE"));
 
+  const body: Record<string, unknown> = { model, input: text };
+  // Voice kosong → jangan kirim field-nya, biar gateway pakai default-nya.
+  if (voice) body.voice = voice;
   const r = await gatewayPost({
     path: "/v1/audio/speech",
-    body: { model, input: text },
+    body,
     timeoutMs: 120000,
   });
   if (!r.ok) return { ok: false, output: `ERROR: ${r.error}` };
@@ -49,7 +56,8 @@ export const ttsTool: ToolDefinition = {
     "Gunakan ketika user meminta teks diubah menjadi suara, audio, voiceover, atau narasi (mis. 'bacakan teks ini', 'buatkan voiceover untuk...'). Menghasilkan file MP3 via gateway dan menyimpannya sebagai artifact yang bisa diputar di Studio. Jangan dipakai untuk transkrip (itu arah sebaliknya).",
   parameters: {
     text: { type: "string", description: "Teks yang dibacakan (maks 4000 karakter)", required: true },
-    voice: { type: "string", description: "ID voice/model TTS opsional — kosongkan untuk default" },
+    model: { type: "string", description: "Model TTS opsional — kosongkan untuk default config TTS_MODEL" },
+    voice: { type: "string", description: "ID voice opsional (mis. ID voice ElevenLabs) — kosongkan untuk default config TTS_VOICE" },
   },
   handler: async (args, ctx) => textToSpeech(args, ctx),
 };

@@ -82,9 +82,9 @@ export async function gatewayPost(call: GatewayCall): Promise<GatewayResult> {
   }
 }
 
-/** Ambil nama model untuk satu capability dari config efektif. */
+/** Ambil nilai config untuk satu capability (model/voice) dari config efektif. */
 export async function gatewayModel(
-  key: Extract<ConfigKey, "WEB_SEARCH_MODEL" | "WEB_FETCH_MODEL" | "IMAGE_MODEL" | "TTS_MODEL">
+  key: Extract<ConfigKey, "WEB_SEARCH_MODEL" | "WEB_FETCH_MODEL" | "IMAGE_MODEL" | "TTS_MODEL" | "TTS_VOICE">
 ): Promise<string> {
   const cfg = await getConfig();
   return cfg.values[key];

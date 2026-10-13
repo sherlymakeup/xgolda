@@ -20,6 +20,7 @@ export const EDITABLE_CONFIG_KEYS = [
   "WEB_FETCH_MODEL",
   "IMAGE_MODEL",
   "TTS_MODEL",
+  "TTS_VOICE",
   "AGENT_MAX_STEPS",
   "AGENT_MAX_DEPTH",
   "AGENT_CRITIC_ENABLED",
@@ -55,7 +56,8 @@ const DEFAULTS: Record<ConfigKey, string> = {
   WEB_SEARCH_MODEL: "tavily/search",
   WEB_FETCH_MODEL: "tavily/fetch",
   IMAGE_MODEL: "gemini/gemini-3-pro-image-preview",
-  TTS_MODEL: "minimax/speech-2.8-turbo",
+  TTS_MODEL: "eleven_v4",
+  TTS_VOICE: "plgKUYgnlZ1DCNh54DwJ",
   AGENT_MAX_STEPS: "12",
   AGENT_WORKSPACE_ROOT:
     process.platform === "win32"
@@ -86,6 +88,7 @@ function envMap(): Record<ConfigKey, string | undefined> {
     WEB_FETCH_MODEL: process.env.WEB_FETCH_MODEL,
     IMAGE_MODEL: process.env.IMAGE_MODEL,
     TTS_MODEL: process.env.TTS_MODEL,
+    TTS_VOICE: process.env.TTS_VOICE,
     AGENT_MAX_STEPS: process.env.AGENT_MAX_STEPS,
     AGENT_WORKSPACE_ROOT: process.env.AGENT_WORKSPACE_ROOT,
     AGENT_MAX_DEPTH: process.env.AGENT_MAX_DEPTH,
