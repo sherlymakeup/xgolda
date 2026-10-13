@@ -138,6 +138,20 @@ const server = http.createServer((req, res) => {
           data: [{ b64_json: Buffer.from("fake-png-bytes").toString("base64") }],
         })
       );
+    } else if (req.method === "POST" && url.endsWith("/search")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          results: [
+            { title: "Mock Result", url: "https://example.com/1", snippet: "cuplikan mock" },
+          ],
+        })
+      );
+    } else if (req.method === "POST" && url.endsWith("/web/fetch")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ title: "Mock Page", content: { text: "isi halaman mock" } })
+      );
     } else if (req.method === "GET" && url.endsWith("/models")) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ data: [{ id: "mock-r1" }] }));

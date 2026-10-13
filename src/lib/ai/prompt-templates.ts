@@ -169,6 +169,11 @@ ATURAN KERAS:
    berhasil per goal + 1x retry bila gagal (sistem menolak panggilan
    berikutnya). Bila sudah berhasil, JANGAN generate lagi — pakai gambar
    yang sudah ada dan tulis jawaban final.
+14. BUDGET RISET (web_search/web_fetch): riset dibatasi — maks 5x web_search
+   + 8x web_fetch per goal (sistem menolak selebihnya). Rencanakan query
+   secara efisien (query berbeda, bukan variasi kecil yang sama). Bila
+   budget habis, BERHENTI riset dan susun jawaban final dari hasil yang
+   sudah ada — jangan muter riset tanpa henti.
 ${skillSection}${personaSection}${styleSection}${memorySection}${envSection}
 TOOLS TERSEDIA:
 ${toolManifest}
@@ -183,6 +188,7 @@ Buat rencana eksekusi bertahap untuk GOAL berikut. Balas HANYA dengan JSON array
 PENTING: title dan description WAJIB dalam Bahasa Indonesia.
 Untuk goal tentang spek device/PC ini: pakai tool system_info — JANGAN rencanakan pencarian file sumber spesifikasi.
 Untuk goal TTS/narasi: JANGAN rencanakan perbaikan, parafrase, atau peringkasan naskah — naskah user dikirim verbatim ke text_to_speech.
+Riset dibatasi budget: maks 5x web_search + 8x web_fetch per goal — jangan rencanakan lebih.
 
 GOAL: ${goal}
 

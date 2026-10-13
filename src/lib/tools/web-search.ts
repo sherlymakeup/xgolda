@@ -1,8 +1,9 @@
 import { gatewayModel, gatewayPost } from "./gateway.ts";
-import type { ToolDefinition, ToolResult } from "./types.ts";
+import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg, num } from "./types.ts";
+import { checkCallBudget } from "./call-budget.ts";
 
-async function webSearch(args: Record<string, unknown>): Promise<ToolResult> {
+async function webSearch(args: Record<string, unknown>, ctx?: ToolContext): Promise<ToolResult> {
   const query = arg(args.query).trim();
   if (!query) return { ok: false, output: "ERROR: 'query' wajib diisi" };
   const maxResults = Math.min(Math.max(num(args.max_results, 5), 1), 20);
@@ -10,6 +11,9 @@ async function webSearch(args: Record<string, unknown>): Promise<ToolResult> {
   if (searchType !== "web" && searchType !== "news") {
     return { ok: false, output: "ERROR: 'search_type' harus 'web' atau 'news'" };
   }
+  // Budget riset per run (maks 5x) — panggilan valid langsung dihitung.
+  const blocked = checkCallBudget("web_search", ctx);
+  if (blocked) return { ok: false, output: blocked };
 
   const model = await gatewayModel("WEB_SEARCH_MODEL");
   const r = await gatewayPost({
@@ -36,11 +40,11 @@ async function webSearch(args: Record<string, unknown>): Promise<ToolResult> {
 export const webSearchTool: ToolDefinition = {
   name: "web_search",
   description:
-    "Gunakan ketika user meminta berita terkini, riset internet, atau data dari web (mis. 'cari berita tentang X', 'riset harga Y'). Mencari di web via gateway dan mengembalikan judul, URL, dan cuplikan. Untuk membaca ISI PENUH sebuah halaman dari hasil ini, lanjutkan dengan web_fetch.",
+    "Gunakan ketika user meminta berita terkini, riset internet, atau data dari web (mis. 'cari berita tentang X', 'riset harga Y'). Mencari di web via gateway dan mengembalikan judul, URL, dan cuplikan. Untuk membaca ISI PENUH sebuah halaman dari hasil ini, lanjutkan dengan web_fetch. Budget: maks 5x panggilan per goal — rencanakan query secara efisien (query berbeda, bukan variasi kecil yang sama), jangan riset berulang tanpa henti.",
   parameters: {
     query: { type: "string", description: "Kata kunci pencarian", required: true },
     max_results: { type: "number", description: "Jumlah hasil, 1-20 (default 5)" },
     search_type: { type: "string", description: "'web' atau 'news' (default 'web')" },
   },
-  handler: async (args) => webSearch(args),
+  handler: async (args, ctx) => webSearch(args, ctx),
 };

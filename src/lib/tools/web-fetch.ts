@@ -1,7 +1,8 @@
 import dns from "node:dns/promises";
 import { gatewayModel, gatewayPost } from "./gateway.ts";
-import type { ToolDefinition, ToolResult } from "./types.ts";
+import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { arg, num } from "./types.ts";
+import { checkCallBudget } from "./call-budget.ts";
 
 /** Apakah IP ini privat/loopback/link-local/reserved (tidak boleh di-fetch). */
 function isPrivateIP(ip: string): boolean {
@@ -59,7 +60,7 @@ async function isPrivateHost(hostname: string): Promise<boolean> {
   }
 }
 
-async function webFetch(args: Record<string, unknown>): Promise<ToolResult> {
+async function webFetch(args: Record<string, unknown>, ctx?: ToolContext): Promise<ToolResult> {
   const url = arg(args.url).trim();
   if (!url) return { ok: false, output: "ERROR: 'url' wajib diisi" };
   if (!/^https?:\/\//i.test(url)) {
@@ -77,6 +78,9 @@ async function webFetch(args: Record<string, unknown>): Promise<ToolResult> {
       output: `ERROR: host '${hostname}' ditolak (privat/loopback/tidak dapat di-resolve) — web_fetch hanya untuk URL publik.`,
     };
   }
+  // Budget riset per run (maks 8x) — URL yang ditolak SSRF di atas tidak menghabiskan budget.
+  const blocked = checkCallBudget("web_fetch", ctx);
+  if (blocked) return { ok: false, output: blocked };
   const maxChars = Math.min(Math.max(num(args.max_characters, 6000), 500), 50000);
 
   const model = await gatewayModel("WEB_FETCH_MODEL");
@@ -102,10 +106,10 @@ async function webFetch(args: Record<string, unknown>): Promise<ToolResult> {
 export const webFetchTool: ToolDefinition = {
   name: "web_fetch",
   description:
-    "Gunakan ketika perlu membaca ISI PENUH sebuah halaman web/URL (artikel, dokumentasi, halaman berita) — mengubah URL menjadi teks markdown. Biasanya dipakai setelah web_search menemukan URL yang relevan. Jangan dipakai untuk file lokal (pakai fs_read_artifact).",
+    "Gunakan ketika perlu membaca ISI PENUH sebuah halaman web/URL (artikel, dokumentasi, halaman berita) — mengubah URL menjadi teks markdown. Biasanya dipakai setelah web_search menemukan URL yang relevan. Jangan dipakai untuk file lokal (pakai fs_read_artifact). Budget: maks 8x panggilan per goal — fetch hanya halaman yang benar-benar relevan, jangan fetch berulang tanpa henti.",
   parameters: {
     url: { type: "string", description: "URL lengkap http(s)://...", required: true },
     max_characters: { type: "number", description: "Batas karakter (default 6000, maks 50000)" },
   },
-  handler: async (args) => webFetch(args),
+  handler: async (args, ctx) => webFetch(args, ctx),
 };
